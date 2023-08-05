@@ -21,16 +21,21 @@ public:
     
     AxisStudioPlugin() {
         // Initialize values to invalid/null values here
-        host = "";
-        port = 0;
-        enabled = true;
-        recording = false;
+        mcpError = MocapApi::EMCPError::Error_None;
+        mcpApplication = nullptr;
+        applicationHandle = 0;
         mcpSettings = nullptr;
         mcpSettingsHandle = 0;
-        mcpApplication = nullptr;
         commandInterface = nullptr;
+        commandHandle = 0;
         notifyInterface = nullptr;
         notifyHandle = 0;
+
+        enabled = true;
+        recording = false;
+
+        host = "";
+        port = 0;
     }
 
     ~AxisStudioPlugin() {
@@ -43,7 +48,7 @@ public:
             reinterpret_cast<void**>(&mcpApplication));
         if (!checkState("Getting Interface")) { return false; }
 
-        mcpError = mcpApplication->CreateApplication(&application);
+        mcpError = mcpApplication->CreateApplication(&applicationHandle);
         if (!checkState("Creating Application")) { return false; }
 
         mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPSettings_Version,
@@ -56,10 +61,10 @@ public:
         mcpError = mcpSettings->SetSettingsTCP(host.c_str(), port, mcpSettingsHandle);
         if (!checkState("Setting TCP")) { return false; }
 
-        mcpError = mcpApplication->SetApplicationSettings(mcpSettingsHandle, application);
+        mcpError = mcpApplication->SetApplicationSettings(mcpSettingsHandle, applicationHandle);
         if (!checkState("Settings Application")) { return false; }
         
-        mcpError = mcpApplication->OpenApplication(application);
+        mcpError = mcpApplication->OpenApplication(applicationHandle);
         if (!checkState("Opening Application")) { return false; }
 
         if (this->enabled)
@@ -110,6 +115,7 @@ public:
             checkState("Destroying Command");
 
             commandInterface = nullptr;
+            commandHandle = 0;
         }
         if (notifyInterface != nullptr && notifyHandle != 0)
         {
@@ -117,6 +123,7 @@ public:
             checkState("Destroying RecordNotify");
 
             notifyInterface = nullptr;
+            notifyHandle = 0;
         }
 
         if (mcpSettings != nullptr)
@@ -125,14 +132,15 @@ public:
             checkState("Destroying Settings");
 
             mcpSettings = nullptr;
+            mcpSettingsHandle = 0;
         }
 
         if (mcpApplication != nullptr)
         {
-            mcpError = mcpApplication->CloseApplication(application);
+            mcpError = mcpApplication->CloseApplication(applicationHandle);
             checkState("Closing Application");
 
-            mcpError = mcpApplication->DestroyApplication(application);
+            mcpError = mcpApplication->DestroyApplication(applicationHandle);
             checkState("Destroying Application"); 
 
             mcpApplication = nullptr;
@@ -188,7 +196,7 @@ public:
                     reinterpret_cast<intptr_t>(arg), commandHandle);
                 if (!checkState("")) { return false; }
             }
-            mcpError = mcpApplication->QueuedServerCommand(commandHandle, application);
+            mcpError = mcpApplication->QueuedServerCommand(commandHandle, applicationHandle);
             if (!checkState("Could not record")) { return false; }
             
             sleep_for(milliseconds(100));
@@ -208,7 +216,7 @@ public:
 
             sleep_for(milliseconds(100));
 
-            mcpError = mcpApplication->QueuedServerCommand(commandHandle, application);
+            mcpError = mcpApplication->QueuedServerCommand(commandHandle, applicationHandle);
             if (!checkState("Stopping")) { return false; }
             
             sleep_for(milliseconds(100));
@@ -226,7 +234,7 @@ public:
         uint32_t unEvent = 0;
             
         mcpError = mcpApplication->PollApplicationNextEvent(nullptr, &unEvent,
-            application);
+            applicationHandle);
         checkState("Could not PollEvents");
             
         bool hasUnhandledEvents = unEvent > 0;
@@ -236,8 +244,7 @@ public:
                 e.size = sizeof(MocapApi::MCPEvent_t);
                 e.eventType = MocapApi::MCPEvent_None;
             }
-            mcpError = mcpApplication->PollApplicationNextEvent(events.data(), &unEvent,
-                application);
+            mcpError = mcpApplication->PollApplicationNextEvent(events.data(), &unEvent, applicationHandle);
             checkState("Could not PollEvents");
             
             hasUnhandledEvents = unEvent > 0;
@@ -355,13 +362,13 @@ public:
 
     MocapApi::EMCPError mcpError;
     MocapApi::IMCPApplication* mcpApplication;
-    MocapApi::MCPApplicationHandle_t application;
+    MocapApi::MCPApplicationHandle_t applicationHandle;
     MocapApi::IMCPSettings* mcpSettings;
     MocapApi::MCPSettingsHandle_t mcpSettingsHandle;
     MocapApi::IMCPCommand* commandInterface;
     MocapApi::MCPCommandHandle_t commandHandle;
     MocapApi::IMCPRecordNotify* notifyInterface;
-    uint64_t notifyHandle;
+    MocapApi::MCPRecordNotifyHandle_t notifyHandle;
 
     bool enabled;
     bool recording;

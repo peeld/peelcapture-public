@@ -1,0 +1,3 @@
+[submodule "Plugins/AxisStudio/MocapApi"]
+	path = Plugins/AxisStudio/MocapApi
+	url = https://github.com/pnmocap/MocapApi

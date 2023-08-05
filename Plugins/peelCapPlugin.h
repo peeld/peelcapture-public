@@ -61,22 +61,26 @@ public:
         cb = funcs;
     }
 
+    // Send up an status update to the app
     void updateState(const char* state, const char* info) {
         if (cb.state)
             cb.state(this, state, info);
     }
 
+    // Send a timecode value to the app
     void timecode(int h, int m, int s, int f, float fps, bool isDrop) {
         if (cb.timecode)
             cb.timecode(this, h, m, s, f, fps, isDrop);
     };
 
+    // Send current subjects to the app
     void subjects(const char** subjects) {
         if (cb.subject) {
             cb.subject(this, subjects);
         }
     }
 
+    // Log a message to the app
     void logMessage(const char* msg) {
         if (cb.log) {
             cb.log(this, msg);
