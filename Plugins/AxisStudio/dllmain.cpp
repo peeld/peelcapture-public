@@ -21,67 +21,56 @@ public:
     
     AxisStudioPlugin() {
         // Initialize values to invalid/null values here
-        mcpError = MocapApi::EMCPError::Error_None;
-        mcpApplication = nullptr;
-        applicationHandle = 0;
-        mcpSettings = nullptr;
-        mcpSettingsHandle = 0;
-        commandInterface = nullptr;
-        commandHandle = 0;
-        notifyInterface = nullptr;
-        notifyHandle = 0;
-
-        enabled = true;
-        recording = false;
-
         host = "";
         port = 0;
+        enabled = false;
+        mcpSettings = nullptr;
+        mcpSettingsHandle = 0;
+        mcpApplication = nullptr;
+        commandInterface = nullptr;
+        notifyInterface = nullptr;
+        notifyHandle = 0;
+        setEnabled(false);
     }
 
     ~AxisStudioPlugin() {
         teardown();
     }
 
-    bool initializeEntity() {
+    void connectAxis() {
 
         mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPApplication_Version,
             reinterpret_cast<void**>(&mcpApplication));
-        if (!checkState("Getting Interface")) { return false; }
+        if (!checkState("Getting Interface")) { return; }
 
-        mcpError = mcpApplication->CreateApplication(&applicationHandle);
-        if (!checkState("Creating Application")) { return false; }
+        mcpError = mcpApplication->CreateApplication(&application);
+        if (!checkState("Creating Application")) { return; }
 
         mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPSettings_Version,
             reinterpret_cast<void**>(&mcpSettings));
-        if (!checkState("Getting Mocap Interface")) { return false; }
+        if (!checkState("Getting Mocap Interface")) { return; }
 
         mcpError = mcpSettings->CreateSettings(&mcpSettingsHandle);
-        if (!checkState("Creating settings")) { return false; }
+        if (!checkState("Creating settings")) { return; }
 
         mcpError = mcpSettings->SetSettingsTCP(host.c_str(), port, mcpSettingsHandle);
-        if (!checkState("Setting TCP")) { return false; }
+        if (!checkState("Setting TCP")) { return; }
 
-        mcpError = mcpApplication->SetApplicationSettings(mcpSettingsHandle, applicationHandle);
-        if (!checkState("Settings Application")) { return false; }
+        mcpError = mcpApplication->SetApplicationSettings(mcpSettingsHandle, application);
+        if (!checkState("Settings Application")) { return; }
         
-        mcpError = mcpApplication->OpenApplication(applicationHandle);
-        if (!checkState("Opening Application")) { return false; }
+        mcpError = mcpApplication->OpenApplication(application);
+        if (!checkState("Opening Application")) { return; }
 
-        if (this->enabled)
-            updateState("ONLINE", "");
-        else
-            updateState("OFFLINE", "");
-
-        return true;
+        sleep_for(milliseconds(200));
 
     }
-
     const char* device() { return "axisstudio"; };
 
     // Must delete current entity and create a new one with the new ip and port
     bool reconfigure(const char* value) override {
 
-        // Setup the device and connection using data in "value"
+        // Setup the device and connectAxision using data in "value"
 
         logMessage("Reconfigure Axis");
         logMessage(value);
@@ -101,10 +90,10 @@ public:
 
             this->port = static_cast<uint16_t>(std::atoi(sport.c_str()));
         }
-
+        
         setEnabled(false);
-
-        return initializeEntity();
+        
+        return true;
     }
 
     void teardown() override {
@@ -115,7 +104,6 @@ public:
             checkState("Destroying Command");
 
             commandInterface = nullptr;
-            commandHandle = 0;
         }
         if (notifyInterface != nullptr && notifyHandle != 0)
         {
@@ -123,7 +111,6 @@ public:
             checkState("Destroying RecordNotify");
 
             notifyInterface = nullptr;
-            notifyHandle = 0;
         }
 
         if (mcpSettings != nullptr)
@@ -132,15 +119,14 @@ public:
             checkState("Destroying Settings");
 
             mcpSettings = nullptr;
-            mcpSettingsHandle = 0;
         }
 
         if (mcpApplication != nullptr)
         {
-            mcpError = mcpApplication->CloseApplication(applicationHandle);
+            mcpError = mcpApplication->CloseApplication(application);
             checkState("Closing Application");
 
-            mcpError = mcpApplication->DestroyApplication(applicationHandle);
+            mcpError = mcpApplication->DestroyApplication(application);
             checkState("Destroying Application"); 
 
             mcpApplication = nullptr;
@@ -166,19 +152,19 @@ public:
         std::ostringstream oss;
         oss << msg << ": " << getErrorStr(mcpError);
         info = oss.str();
+        
         updateState("ERROR", oss.str().c_str());
+        
         logMessage(oss.str().c_str());
         return false;
     }
 
     bool command(const char* name, const char* arg)
     {
-        if (!enabled)
-        {
-            updateState("OFFLINE", "");
-            return true;
+        if (!enabled) {
+            connectAxis();
         }
-
+        
         if (strcmp(name, "record") == 0)
         {
             if (commandInterface == nullptr)
@@ -196,7 +182,7 @@ public:
                     reinterpret_cast<intptr_t>(arg), commandHandle);
                 if (!checkState("")) { return false; }
             }
-            mcpError = mcpApplication->QueuedServerCommand(commandHandle, applicationHandle);
+            mcpError = mcpApplication->QueuedServerCommand(commandHandle, application);
             if (!checkState("Could not record")) { return false; }
             
             sleep_for(milliseconds(100));
@@ -216,7 +202,7 @@ public:
 
             sleep_for(milliseconds(100));
 
-            mcpError = mcpApplication->QueuedServerCommand(commandHandle, applicationHandle);
+            mcpError = mcpApplication->QueuedServerCommand(commandHandle, application);
             if (!checkState("Stopping")) { return false; }
             
             sleep_for(milliseconds(100));
@@ -234,7 +220,7 @@ public:
         uint32_t unEvent = 0;
             
         mcpError = mcpApplication->PollApplicationNextEvent(nullptr, &unEvent,
-            applicationHandle);
+            application);
         checkState("Could not PollEvents");
             
         bool hasUnhandledEvents = unEvent > 0;
@@ -244,7 +230,8 @@ public:
                 e.size = sizeof(MocapApi::MCPEvent_t);
                 e.eventType = MocapApi::MCPEvent_None;
             }
-            mcpError = mcpApplication->PollApplicationNextEvent(events.data(), &unEvent, applicationHandle);
+            mcpError = mcpApplication->PollApplicationNextEvent(events.data(), &unEvent,
+                application);
             checkState("Could not PollEvents");
             
             hasUnhandledEvents = unEvent > 0;
@@ -277,18 +264,12 @@ public:
                         return;
                     }
                     if (notifyType == MocapApi::EMCPNotify::Notify_RecordStarted) {
-                        recording = true;
                         updateState("RECORDING", "");
                     }
-                    else if (notifyType == MocapApi::EMCPNotify::Notify_RecordStoped) {
-                        recording = false;
-                        updateState("ONLINE", "");
+                    else if (notifyType == MocapApi::EMCPNotify::Notify_RecordStoped || 
+                             notifyType == MocapApi::EMCPNotify::Notify_RecordFinished) {
+                        setEnabled(true);
                     }
-                    else if (notifyType == MocapApi::EMCPNotify::Notify_RecordFinished) {
-                        recording = false;
-                        updateState("ONLINE", "");
-                    }
-                    
                 }
             }
         }
@@ -362,7 +343,7 @@ public:
 
     MocapApi::EMCPError mcpError;
     MocapApi::IMCPApplication* mcpApplication;
-    MocapApi::MCPApplicationHandle_t applicationHandle;
+    MocapApi::MCPApplicationHandle_t application;
     MocapApi::IMCPSettings* mcpSettings;
     MocapApi::MCPSettingsHandle_t mcpSettingsHandle;
     MocapApi::IMCPCommand* commandInterface;
@@ -371,7 +352,6 @@ public:
     MocapApi::MCPRecordNotifyHandle_t notifyHandle;
 
     bool enabled;
-    bool recording;
     std::string host;
     uint16_t port;
 

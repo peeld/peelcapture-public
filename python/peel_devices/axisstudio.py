@@ -20,7 +20,7 @@ class AxisStudio(PeelDeviceBase):
             raise RuntimeError("Could not create plugin device")
         if host and port:
             cmd.configureDevice(self.plugin_id, f"{self.host}:{self.port}")
-            cmd.setDeviceEnabled(self.plugin_id, self.enabled)
+            # cmd.setDeviceEnabled(self.plugin_id, self.enabled)
 
     def set_enabled(self, value):
         super().set_enabled(value)
@@ -40,7 +40,7 @@ class AxisStudio(PeelDeviceBase):
         self.host = kwargs['host']
         self.port = kwargs['port']
         cmd.configureDevice(self.plugin_id, f"{self.host}:{self.port}")
-        cmd.setDeviceEnabled(self.plugin_id, self.enabled)
+        # cmd.setDeviceEnabled(self.plugin_id, self.enabled)
 
     def teardown(self):
         cmd.deleteDevice(self.plugin_id)
