@@ -23,14 +23,14 @@ public:
         // Initialize values to invalid/null values here
         host = "";
         port = 0;
-        enabled = false;
+        enabled = true;
         mcpSettings = nullptr;
         mcpSettingsHandle = 0;
         mcpApplication = nullptr;
         commandInterface = nullptr;
+        commandHandle = 0;
         notifyInterface = nullptr;
         notifyHandle = 0;
-        setEnabled(false);
     }
 
     ~AxisStudioPlugin() {
@@ -39,15 +39,13 @@ public:
 
     void connectAxis() {
 
-        mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPApplication_Version,
-            reinterpret_cast<void**>(&mcpApplication));
+        mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPApplication_Version, reinterpret_cast<void**>(&mcpApplication));
         if (!checkState("Getting Interface")) { return; }
 
         mcpError = mcpApplication->CreateApplication(&application);
         if (!checkState("Creating Application")) { return; }
 
-        mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPSettings_Version,
-            reinterpret_cast<void**>(&mcpSettings));
+        mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPSettings_Version, reinterpret_cast<void**>(&mcpSettings));
         if (!checkState("Getting Mocap Interface")) { return; }
 
         mcpError = mcpSettings->CreateSettings(&mcpSettingsHandle);
@@ -58,9 +56,15 @@ public:
 
         mcpError = mcpApplication->SetApplicationSettings(mcpSettingsHandle, application);
         if (!checkState("Settings Application")) { return; }
-        
+
         mcpError = mcpApplication->OpenApplication(application);
         if (!checkState("Opening Application")) { return; }
+
+        //mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPCommand_Version, reinterpret_cast<void**>(&commandInterface));
+       //if (!checkState("Creating command interface")) { return; }
+
+        //mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPRecordNotify_Version, reinterpret_cast<void**>(&notifyInterface)); 
+        //if (!checkState("Getting RecordNotify Interface")) { return; }
 
         sleep_for(milliseconds(200));
 
@@ -90,9 +94,11 @@ public:
 
             this->port = static_cast<uint16_t>(std::atoi(sport.c_str()));
         }
-        
-        setEnabled(false);
-        
+
+        connectAxis();
+
+        teardown();
+                
         return true;
     }
 
@@ -104,6 +110,7 @@ public:
             checkState("Destroying Command");
 
             commandInterface = nullptr;
+            commandHandle = 0;
         }
         if (notifyInterface != nullptr && notifyHandle != 0)
         {
@@ -111,6 +118,7 @@ public:
             checkState("Destroying RecordNotify");
 
             notifyInterface = nullptr;
+            notifyHandle = 0;
         }
 
         if (mcpSettings != nullptr)
@@ -129,6 +137,7 @@ public:
             mcpError = mcpApplication->DestroyApplication(application);
             checkState("Destroying Application"); 
 
+            application = 0;
             mcpApplication = nullptr;
         }
     }
@@ -149,6 +158,7 @@ public:
             return true;
         if (mcpError == MocapApi::Error_ServerNotReady)
             msg = "No TCP connection";
+
         std::ostringstream oss;
         oss << msg << ": " << getErrorStr(mcpError);
         info = oss.str();
@@ -162,16 +172,17 @@ public:
     bool command(const char* name, const char* arg)
     {
         if (!enabled) {
-            connectAxis();
+            return true;
+        }
+
+        if (commandInterface == nullptr)
+        {
+            mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPCommand_Version, reinterpret_cast<void**>(&commandInterface));
+            if (!checkState("Creating command interface")) { return false; }
         }
         
         if (strcmp(name, "record") == 0)
         {
-            if (commandInterface == nullptr)
-                mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPCommand_Version,
-                    reinterpret_cast<void**>(&commandInterface));
-                if (!checkState("")) { return false; }
-
             mcpError = commandInterface->CreateCommand(MocapApi::CommandStartRecored, &commandHandle);
             if (!checkState("")) { return false; }
 
@@ -192,11 +203,6 @@ public:
 
         if (strcmp(name, "stop") == 0)
         {
-            if (commandInterface == nullptr)
-                mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPCommand_Version,
-                    reinterpret_cast<void**>(&commandInterface));
-                if (!checkState("")) { return false; }
-
             mcpError = commandInterface->CreateCommand(MocapApi::CommandStopRecored, &commandHandle);
             if (!checkState("")) { return false; }
 
@@ -208,7 +214,13 @@ public:
             sleep_for(milliseconds(100));
 
             PollEvents();
-        }       
+        }
+
+        if (commandHandle != 0) {
+            mcpError = commandInterface->DestroyCommand(commandHandle);
+            checkState("Destroying command");
+            commandHandle = 0;
+        }
 
         return true;
     }
@@ -250,11 +262,7 @@ public:
                     MocapApi::EMCPNotify notifyType = e.eventData.notifyData._notify;
                     notifyHandle = e.eventData.notifyData._notifyHandle;
                     
-                    if (notifyInterface == nullptr) {
-                        mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPRecordNotify_Version,
-                            reinterpret_cast<void**>(&notifyInterface));
-                        checkState("Getting RecordNotify Interface");
-                    }
+
 
                     const char* name = nullptr;
                     mcpError = notifyInterface->RecordNotifyGetTakeName(&name, notifyHandle);
@@ -268,20 +276,15 @@ public:
                     }
                     else if (notifyType == MocapApi::EMCPNotify::Notify_RecordStoped || 
                              notifyType == MocapApi::EMCPNotify::Notify_RecordFinished) {
-                        setEnabled(true);
+                        updateState("ONLINE", "");
                     }
                 }
             }
         }
     }
+
     void setEnabled(bool b) override {
         enabled = b;
-        if (!enabled) {
-            updateState("OFFLINE", info.c_str());
-        }
-        else {
-            updateState("ONLINE", info.c_str());
-        }
     }
 
     bool getEnabled() override {
@@ -352,6 +355,7 @@ public:
     MocapApi::MCPRecordNotifyHandle_t notifyHandle;
 
     bool enabled;
+    bool online;
     std::string host;
     uint16_t port;
 
