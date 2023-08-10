@@ -96,9 +96,7 @@ public:
         }
 
         connectAxis();
-
-        teardown();
-                
+               
         return true;
     }
 
