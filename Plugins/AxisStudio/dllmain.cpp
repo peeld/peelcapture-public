@@ -31,6 +31,8 @@ public:
         commandHandle = 0;
         notifyInterface = nullptr;
         notifyHandle = 0;
+        init = false;
+
     }
 
     ~AxisStudioPlugin() {
@@ -48,8 +50,14 @@ public:
         mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPSettings_Version, reinterpret_cast<void**>(&mcpSettings));
         if (!checkState("Getting Mocap Interface")) { return; }
 
+        mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPAvatar_Version, reinterpret_cast<void**>(&avatarInterface));
+        if (!checkState("Getting Avatar Interface")) { return; }
+
         mcpError = mcpSettings->CreateSettings(&mcpSettingsHandle);
         if (!checkState("Creating settings")) { return; }
+
+        mcpError = mcpSettings->SetSettingsBvhTransformation(MocapApi::BvhTransformation_Enable, mcpSettingsHandle);
+        if (!checkState("Setting bvh")) { return; }
 
         mcpError = mcpSettings->SetSettingsTCP(host.c_str(), port, mcpSettingsHandle);
         if (!checkState("Setting TCP")) { return; }
@@ -57,16 +65,18 @@ public:
         mcpError = mcpApplication->SetApplicationSettings(mcpSettingsHandle, application);
         if (!checkState("Settings Application")) { return; }
 
+        mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPRecordNotify_Version, reinterpret_cast<void**>(&notifyInterface));
+        if (!checkState("Getting RecordNotify Interface")) { return; }
+
         mcpError = mcpApplication->OpenApplication(application);
         if (!checkState("Opening Application")) { return; }
 
         //mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPCommand_Version, reinterpret_cast<void**>(&commandInterface));
-       //if (!checkState("Creating command interface")) { return; }
-
-        //mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPRecordNotify_Version, reinterpret_cast<void**>(&notifyInterface)); 
-        //if (!checkState("Getting RecordNotify Interface")) { return; }
+        //if (!checkState("Creating command interface")) { return; }
 
         sleep_for(milliseconds(200));
+
+            PollEvents();
 
     }
     const char* device() { return "axisstudio"; };
@@ -80,6 +90,10 @@ public:
         logMessage(value);
 
         teardown();
+
+        updateState("OFFLINE", "");
+
+        init = true;
 
         if (value != nullptr)
         {
@@ -243,6 +257,11 @@ public:
             mcpError = mcpApplication->PollApplicationNextEvent(events.data(), &unEvent,
                 application);
             checkState("Could not PollEvents");
+
+            if (init && unEvent > 0) {
+                updateState("ONLINE", "");
+                init = false;
+            }
             
             hasUnhandledEvents = unEvent > 0;
             events.resize(unEvent);
@@ -260,8 +279,6 @@ public:
                     MocapApi::EMCPNotify notifyType = e.eventData.notifyData._notify;
                     notifyHandle = e.eventData.notifyData._notifyHandle;
                     
-
-
                     const char* name = nullptr;
                     mcpError = notifyInterface->RecordNotifyGetTakeName(&name, notifyHandle);
                     checkState("Getting TakeName");
@@ -341,17 +358,18 @@ public:
         }
     }
 
-
     MocapApi::EMCPError mcpError;
     MocapApi::IMCPApplication* mcpApplication;
     MocapApi::MCPApplicationHandle_t application;
     MocapApi::IMCPSettings* mcpSettings;
+    MocapApi::IMCPAvatar* avatarInterface;
     MocapApi::MCPSettingsHandle_t mcpSettingsHandle;
     MocapApi::IMCPCommand* commandInterface;
     MocapApi::MCPCommandHandle_t commandHandle;
     MocapApi::IMCPRecordNotify* notifyInterface;
     MocapApi::MCPRecordNotifyHandle_t notifyHandle;
 
+    bool init;
     bool enabled;
     bool online;
     std::string host;
@@ -361,6 +379,8 @@ public:
     std::string info;
     
     std::mutex Critical;
+
+    std::thread listener;
 
 };
 
