@@ -156,6 +156,7 @@ public:
 
     const char* getState() { return state.c_str(); }
     const char* getInfo() { return info.c_str(); }
+    const char* pluginCommand(const char *) override { return ""; }
 
     void updateState(const char* state_, const char* info_)
     {

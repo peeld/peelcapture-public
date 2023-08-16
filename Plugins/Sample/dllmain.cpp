@@ -80,17 +80,25 @@ public:
         return enabled;
     }
 
-    const char* getInfo()
+    const char* getInfo() override
     {
         return info;
     }
 
-    const char* getState()
+    const char* getState() override
     {
         if (enabled)
             return "ONLINE";
         else
             return "OFFLINE";
+    }
+
+    const char* pluginCommand(const char* msg) override
+    {
+        std::ostringstream oss;
+        oss << "Reply to " << msg;
+        commandReply = oss.str();
+        return commandReply.c_str();
     }
 
     void loop()
@@ -152,6 +160,8 @@ public:
     size_t frame;
     std::string host;
     int value;
+
+    std::string commandReply;
 
 };
 

@@ -12,3 +12,11 @@ target_include_directories(PeelCapSamplePlugin PUBLIC
 set_target_properties(PeelCapSamplePlugin PROPERTIES PREFIX "")
 set_target_properties(PeelCapSamplePlugin PROPERTIES OUTPUT_NAME "PeelCapSamplePlugin")
 target_compile_definitions(PeelCapSamplePlugin PUBLIC -DPEEL_PLUGIN_EXPORTS)
+
+if(TARGET Controller)
+add_custom_command(
+    TARGET PeelCapSamplePlugin POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:PeelCapSamplePlugin> $<TARGET_FILE_DIR:Controller>/plugins
+    COMMENT "Copying example plugin to app build dir"
+)
+endif()

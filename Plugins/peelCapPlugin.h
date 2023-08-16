@@ -54,6 +54,7 @@ public:
     virtual bool getEnabled() = 0;
     virtual const char* getInfo() = 0;
     virtual const char* getState() = 0;
+    virtual const char* pluginCommand(const char *) = 0;
 
     // Device updating app state
     PluginCallbacks cb;
