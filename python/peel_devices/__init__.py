@@ -210,6 +210,7 @@ class PeelDeviceBase(QtCore.QObject):
         return self.name
 
     def set_enabled(self, value):
+        """ Main app calls this to enable / disable the device.  Default behavior is to set self.enabled """
         self.enabled = value
 
     @staticmethod
@@ -240,15 +241,27 @@ class PeelDeviceBase(QtCore.QObject):
         raise NotImplementedError
 
     def command(self, command, argument):
-        """ Command, Argument may be:
-           record, {takename}
-           play, {takename} or "" for last recorded
-           stop, ""
-           transport, stop | next | prev
-           notes, {note}
-           description, {description}
-           timecode, {timecode}    - called when recording starts
-           takeNumber, {nnn} - updates the current take number before recording starts
+        """
+        Command, Argument may be:
+
+        - record *takename*
+        - play *takename* or "" for last recorded
+        - stop
+        - transport *stop | next | prev*
+        - notes *note* - sent when the notes are changed, relevant for the last take
+        - timecode *timecode* - called when recording starts
+        - selectedTake *take* - sent when a user selects a take, passes the take name
+
+        The following are called when take information needs to be updated, ie the take name has changed or when
+        recording starts:
+
+        - takeName *n*
+        - shotName *name*
+        - shotTag *tag*
+        - takeNumber *n*
+        - description *description*
+        - takeId *id*
+
         """
         raise NotImplementedError
 
@@ -271,6 +284,8 @@ class PeelDeviceBase(QtCore.QObject):
             See the note in update_state() about populating state and info values when
             calling this from get_state() or get_info()
         """
+
+        print(f"ref {self.name} {len(self.list_takes())}")
 
         if state is None:
             state = self.get_state()
@@ -347,6 +362,7 @@ class PeelDeviceBase(QtCore.QObject):
         raise NotImplementedError
 
     def data_directory(self):
+        """ returns the current data directory for this device """
         return cmd.getDataDirectory() + "/" + self.name
 
 

@@ -1,4 +1,6 @@
 #include "peelCapPlugin.h"
+
+#pragma warning( disable : 4200)
 #include "RemoteCaptury.h"
 
 #include <iostream>
@@ -16,6 +18,7 @@ public:
     CapturyPlugin() : running(true) {
         frame = 0;
         host = "127.0.0.1";
+        port = 2101;
         value = 0;
         enabled = false;
         recording = false;
@@ -29,60 +32,115 @@ public:
     const char* device() { return "Captury"; };
 
     bool reconfigure(const char* value) override {
-        if (value != nullptr)
+
+        if (value == nullptr)
         {
-            this->host = value;
-            strcpy_s(info, 255, value);
+            return false;
         }
 
+        std::string stringValue(value);
+        size_t pos = stringValue.find(':');
+        if (pos != -1)
+        {
+            this->host = stringValue.substr(0, pos);
+            this->port = atoi(stringValue.substr(pos + 1).c_str());
+        }
+        else
+        {
+            this->host = stringValue;
+            this->port = 2101;
+        }
+
+        connectToCaptry();
         return true;
+    }
+
+    void connectToCaptry()
+    {
+        int res = Captury_connect(host.c_str(), port);
+
+        if (res != 1)
+        {
+            updateState("ERROR", "Error Connecting");
+        }
+
+        const char* status =  Captury_getStatus();
+        if (status == nullptr)
+        {
+            strcpy(info, "No Connection");
+            updateState("ERROR", "No Connection");
+        }
+        else
+        {
+            updateState("ONLINE", status);
+        }
+
+    }
+
+    void disonnectFromCaptury()
+    {
+        Captury_disconnect();
+        updateState("OFFLINE", "");
     }
 
     void teardown() override
     {
+        disonnectFromCaptury();
         running = false;
     };
 
     bool command(const char* name, const char* arg)
     {
+        int res;
+
         if (!enabled)
         {
-            updateState("OFFLINE", info);
+            updateState("OFFLINE", "");
             return true;
         }
 
         if (strcmp(name, "record") == 0)
         {
             std::string sn = currentShotName + "_" + std::string(arg);
-            int ress = Captury_setShotName(sn.c_str());
-            if (ress != 0)
+            res = Captury_setShotName(sn.c_str());
+            if (res != 0)
             {
-                updateState("ONLINE", info);
+                updateState("ONLINE", "");
                 return true;
             }
-            int res = Captury_startRecording();
+
+            res = Captury_startRecording();
             if (res > 0)
             {
-                updateState("RECORDING", info);
+                updateState("RECORDING", "");
                 recording = true;
-                return true;
+            }            
+            else
+            {
+                updateState("ERROR", "Could not record");
             }
-            
+
+            return true;
         }
+
         if (strcmp(name, "stop") == 0)
         {
             int res = Captury_stopRecording();
             if (res == 1)
             {
-                updateState("ONLINE", info);
+                updateState("ONLINE", "");
                 recording = false;
-                return true;
             }
+            else
+            {
+                updateState("ERROR", "Could not stop");
+            }
+            return true;
         }
+
         if (strcmp(name, "shotName") == 0)
         {
             currentShotName = arg;
-            return true;
         }
 
         return true;
@@ -91,17 +149,11 @@ public:
     void setEnabled(bool b) override {
         enabled = b;
         if (!enabled) {
-            updateState("OFFLINE", info);
-            Captury_disconnect();
+            this->disonnectFromCaptury();            
         }
         else {
-            int res = Captury_connect(host.c_str(), 2101);
-            if (res != 0)
-            {
-                updateState("OFFLINE", info);
-                return;
-            }
-            updateState("ONLINE", info);
+            this->connectToCaptry();
+
         }
     }
 
@@ -116,10 +168,19 @@ public:
 
     const char* getState() override
     {
-        if (enabled)
-            return "ONLINE";
-        else
+        if (!enabled)
             return "OFFLINE";
+
+        const char* status = Captury_getStatus();
+        if (status == nullptr)
+        {
+            return "ERROR";
+        }
+        else
+        {
+            strncpy(info, status, 255);
+            return "ONLINE";
+        }
     }
 
     const char* pluginCommand(const char* msg) override
@@ -137,6 +198,7 @@ public:
     bool recording;
     size_t frame;
     std::string host;
+    int port;
     int value;
     std::string currentShotName;
     std::string commandReply;

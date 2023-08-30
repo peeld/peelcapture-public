@@ -35,8 +35,10 @@ extern "C" PEEL_PLUGIN_API PeelCapDeviceInterface* createPlugin() {
     return new MyPlugin();
 }
 
-extern "C" PEEL_PLUGIN_API const char* getIdentifier() {
-    return "MyDevice";
+extern "C" PEEL_PLUGIN_API void getIdentifier(char *buf, size_t len) {
+    snprintf(buf, len, "MyDevice");
+}
+
 }
 
 */
