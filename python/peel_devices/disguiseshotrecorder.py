@@ -242,4 +242,4 @@ class Disguise(PeelDeviceBase):
         #     ret.append(take)
         # return ret
 
-
+###Authored at ZeroSpace.
