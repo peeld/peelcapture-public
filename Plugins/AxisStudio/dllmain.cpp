@@ -268,7 +268,7 @@ public:
             events.resize(unEvent);
         }
         if (hasUnhandledEvents) {
-            std::lock_guard<std::mutex> lock(Critical);
+            // std::lock_guard<std::mutex> lock(Critical);
 
             for (const auto& e : events) {
                 if (e.eventType == MocapApi::MCPEvent_Error) {

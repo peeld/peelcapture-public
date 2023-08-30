@@ -155,6 +155,7 @@ class Stub(PeelDeviceBase):
     def __init__(self, name):
         super(Stub, self).__init__(name)
         self.thread = None
+        self.takes = []
 
     @staticmethod
     def device():
@@ -213,6 +214,8 @@ class Stub(PeelDeviceBase):
             print("Recording take: " + str(argument))
             self.thread.start()
 
+            self.takes.append(argument)
+
             cmd.setSubjects([f"Subject{n}" for n in range(random.randint(2, 5))])
 
         if command == "stop":
@@ -269,6 +272,9 @@ class Stub(PeelDeviceBase):
     def reconfigure(self, name, **kwargs):
         """ Change the settings in the device. """
         self.name = name
+
+    def list_takes(self):
+        return self.takes
 
 
 if __name__ == "__main__":

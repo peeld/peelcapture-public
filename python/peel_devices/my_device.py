@@ -1,5 +1,6 @@
 from PeelApp import cmd
 from peel_devices import SimpleDeviceWidget, PeelDeviceBase
+import json
 
 class MyDeviceWidget(SimpleDeviceWidget):
     def __init__(self, settings):
@@ -80,4 +81,5 @@ class MyDevice(PeelDeviceBase):
         return False
 
     def list_takes(self):
-        return []
+        data = cmd.deviceCommand(self.plugin_id, "takes")
+        return data.split("|")

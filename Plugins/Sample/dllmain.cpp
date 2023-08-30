@@ -57,6 +57,7 @@ public:
             frame += 4000;
             recording = true;
             updateState("RECORDING", info);
+            this->takes.push_back(arg);
         }
         if (strcmp(name, "stop") == 0)
         {
@@ -96,8 +97,19 @@ public:
     const char* pluginCommand(const char* msg) override
     {
         std::ostringstream oss;
-        oss << "Reply to " << msg;
-        commandReply = oss.str();
+
+        if (msg == nullptr) { return nullptr; }
+        if (strcmp(msg, "takes") == 0)
+        {
+            std::copy(takes.begin(), takes.end(), std::ostream_iterator<std::string>(oss, "|"));
+            commandReply = oss.str();
+        }
+        else
+        {
+            oss << "Reply to " << msg;
+            commandReply = oss.str();
+        }
+
         return commandReply.c_str();
     }
 
@@ -162,6 +174,7 @@ public:
     int value;
 
     std::string commandReply;
+    std::vector< std::string > takes;
 
 };
 

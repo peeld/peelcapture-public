@@ -319,6 +319,7 @@ def copy_selects():
     w.exec_()
     w.deleteLater()
 
+
 def audio_recording_started():
 
     """ Called by the main app when audio recording has started successfully """
@@ -378,3 +379,9 @@ def lightbulb(value):
     for d in DEVICES:
         if d.device() == "hue":
             d.turn_on(value)
+
+
+def do_stop():
+    """ Called shortly after stop event to update devices """
+    global DEVICES
+    DEVICES.update_all()
