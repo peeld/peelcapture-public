@@ -88,7 +88,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
     """
 
     def __init__(self, name=None, host=None, port=None, broadcast=None, listen_ip=None, listen_port=None, fmt=None,
-                 set_capture_folder=False):
+                 set_capture_folder=False, enter_clip_editing=False):
 
         super(XmlUdpDeviceBase, self).__init__(name)
 
@@ -105,10 +105,11 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         self.recording = False
         self.current_take = None
         self.set_capture_folder = set_capture_folder
+        self.enter_clip_editing = False
 
         self.reconfigure(name=name, host=host, port=port, broadcast=broadcast,
                          listen_ip=listen_ip, listen_port=listen_port, fmt=fmt,
-                         set_capture_folder=set_capture_folder)
+                         set_capture_folder=set_capture_folder, enter_clip_editing=enter_clip_editing)
 
     def as_dict(self):
         return {'name': self.name,
@@ -121,7 +122,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
                 'set_capture_folder': self.set_capture_folder}
 
     def reconfigure(self, name, host=None, port=None, broadcast=None, listen_ip=None, listen_port=None, fmt=None,
-                    set_capture_folder=False):
+                    set_capture_folder=False, enter_clip_editing=False):
 
         if self.udp is not None:
             self.udp.close()
@@ -137,6 +138,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         if fmt is not None:
             self.format = fmt
         self.set_capture_folder = set_capture_folder
+        self.enter_clip_editing = enter_clip_editing
 
         if self.listen_thread is not None:
             self.listen_thread.kill()
@@ -269,6 +271,16 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             msg += '<Notes></Notes>\n'
             msg += '</CaptureStop>\n'
 
+        elif self.format == "Rokoko":
+            # https://github.com/Rokoko/studio-command-api-examples/blob/master/README.md#trigger-messages
+            msg = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>' \
+                + '<CaptureStop>' \
+                + '<Name VALUE="%s"/>' % self.current_take \
+                + '<TimeCode VALUE="00:00:00:00"/>' \
+                + '<SetActiveClip VALUE="%s"/>' % str(self.enter_clip_editing) \
+                + '<PacketID VALUE="%d"/>' % self.packet_id \
+                + '<ProcessID VALUE="22236"/>' \
+                + '</CaptureStop>'
         else:
             msg = '<?xml version="1.0" encoding="utf-8" ?>\n' \
                 + '<CaptureStop>\n' \
@@ -328,6 +340,15 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             msg += '<Notes></Notes>\n'
             msg += '</CaptureStart>\n'
 
+        elif self.format == "Rokoko":
+            # https://github.com/Rokoko/studio-command-api-examples/blob/master/README.md#trigger-messages
+            msg = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>' \
+                + '<CaptureStart>' \
+                + '<Name VALUE="%s"/>' % self.current_take \
+                + '<TimeCode VALUE="00:00:00:00"/>' \
+                + '<PacketID VALUE="%d"/>' % self.packet_id \
+                + '<ProcessID VALUE="22236"/>' \
+                + '</CaptureStart>'
         else:
             msg = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n' \
                 + '<CaptureStart>\n' \
@@ -370,7 +391,7 @@ class AddXmlUdpWidget(peel_devices.SimpleDeviceWidget):
                                               has_set_capture_folder=True)
 
         self.format_mode = QtWidgets.QComboBox()
-        self.format_mode.addItems(["Vicon", "Optitrack", "XSENS", "Blade"])
+        self.format_mode.addItems(["Vicon", "Optitrack", "XSENS", "Blade", "Rokoko"])
         self.format_mode.setCurrentText(settings.value(self.title + "Format", "Vicon"))
         self.form_layout.addRow("Format", self.format_mode)
 
