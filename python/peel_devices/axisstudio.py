@@ -1,6 +1,7 @@
 from PeelApp import cmd
 from peel_devices import SimpleDeviceWidget, PeelDeviceBase
 
+
 class AxisStudioWidget(SimpleDeviceWidget):
     def __init__(self, settings):
         super(AxisStudioWidget, self).__init__(settings, "AxisStudio", has_host=True, has_port=True,
@@ -8,7 +9,6 @@ class AxisStudioWidget(SimpleDeviceWidget):
 
         url = "https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-axis/"
         self.info_text = "Perception Neuron Axis Studio.  <A HREF=\"" + url + "\">Documentation</A>"
-
 
 
 class AxisStudio(PeelDeviceBase):
