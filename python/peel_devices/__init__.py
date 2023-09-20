@@ -285,8 +285,6 @@ class PeelDeviceBase(QtCore.QObject):
             calling this from get_state() or get_info()
         """
 
-        print(f"ref {self.name} {len(self.list_takes())}")
-
         if state is None:
             state = self.get_state()
         if info is None:
@@ -359,7 +357,7 @@ class PeelDeviceBase(QtCore.QObject):
     def list_takes(self):
         """ list the take files currently on the device
         """
-        raise NotImplementedError
+        return []
 
     def data_directory(self):
         """ returns the current data directory for this device """
@@ -472,8 +470,11 @@ class DeviceCollection(QtCore.QObject):
         return False
 
     def load_json(self, data, mode):
+
         if mode == "replace":
             self.remove_all()
+
+        error = False
 
         klass = dict([(i.device(), i) for i in self.all_classes()])
         if "devices" in data:
@@ -481,13 +482,16 @@ class DeviceCollection(QtCore.QObject):
 
                 if not isinstance(device_data, dict):
                     print("Not a dict while reading device data:" + str(device_data))
+                    error = True
                     continue
 
                 if name not in klass:
                     print("Could not find device class for: " + name)
+                    error = True
                     continue
 
                 if mode == "merge" and self.has_device(name, device_data["name"]):
+                    error = True
                     continue
 
                 try:
@@ -497,6 +501,12 @@ class DeviceCollection(QtCore.QObject):
                     print("Error recreating class: " + str(name))
                     print(str(e))
                     print(str(device_data))
+                    error = True
+
+        if error:
+            msg = "There was an error loading one or more devices.\n" +\
+                  "Please check the error log and report any errors to support@peeldev.com"
+            QtWidgets.QMessageBox.warning(cmd.getMainWindow(), "Error", msg)
 
 
 class TcpDevice(PeelDeviceBase):

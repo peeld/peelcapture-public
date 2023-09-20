@@ -71,7 +71,10 @@ class XmlUdpListenThread(QtCore.QThread):
 
             except IOError as e:
                 if not str(e).startswith("[WinError 10038]"):
-                    raise e
+                    print("Error: " + str(e))
+
+                self.status = "ERROR"
+                self.state_change.emit()
 
         print("XML UDP Stopped")
 
@@ -363,8 +366,8 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             self.error = "No socket"
             print("No socket while trying to send error - " + self.name)
 
-        print(f"UDP {self.host}  {self.port}  {self.format}")
-        print(msg)
+        # print(f"UDP {self.host}  {self.port}  {self.format}")
+        # print(msg)
 
         try:
             self.udp.sendto(msg.encode("utf8"), (self.host, self.port))
