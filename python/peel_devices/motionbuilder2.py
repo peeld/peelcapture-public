@@ -77,6 +77,11 @@ class SocketThread(QtCore.QThread):
         except IOError as e:
             print("Error closing Mobu Device socket: " + str(e))
 
+    def teardown(self):
+        self.close_socket()
+        self.running = False
+        self.wait(3000)
+
 
 class MobuDeviceWidget(SimpleDeviceWidget):
     def __init__(self, settings):
@@ -197,7 +202,6 @@ class MotionBuilderDevice(PeelDeviceBase):
             QtWidgets.QMessageBox.warning(widget, "Error", "Invalid port")
             return False
 
-
     def teardown(self):
         if self.udp is not None:
-            self.udp.close_socket()
+            self.udp.teardown()
