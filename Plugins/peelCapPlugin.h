@@ -8,10 +8,14 @@
 #include <functional>
 #include <map>
 
+#ifdef _WIN32
 #ifdef PEEL_PLUGIN_EXPORTS
 #define PEEL_PLUGIN_API __declspec(dllexport)
 #else
 #define PEEL_PLUGIN_API __declspec(dllimport)
+#endif
+#else
+#define PEEL_PLUGIN_API
 #endif
 
 #pragma once
@@ -91,7 +95,13 @@ public:
     }
 };
 
+#ifdef _WIN32
 typedef PeelCapDeviceInterface* (__cdecl* plugin_entry_ptr)();
 typedef const char* (__cdecl* plugin_identifier_ptr)();
+#else
+typedef PeelCapDeviceInterface* (*plugin_entry_ptr)();
+typedef const char* (*plugin_identifier_ptr)();
+#endif
+
 
 #endif
