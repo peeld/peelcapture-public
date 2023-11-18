@@ -25,7 +25,7 @@
 
 from openpyxl import load_workbook
 from PeelApp import cmd
-
+from PySide6 import QtWidgets
 
 def load(path, filter):
 
@@ -36,7 +36,20 @@ def load(path, filter):
 
     wb = load_workbook(path)
 
-    cmd.clearShotList()
+    dlg = QtWidgets.QMessageBox(cmd.getMainWindow())
+    dlg.setText("Do you want to replace the current shot list or append to it?")
+    dlg.addButton("Replace", QtWidgets.QMessageBox.AcceptRole)
+    dlg.addButton("Append", QtWidgets.QMessageBox.ActionRole)
+    dlg.addButton("Cancel", QtWidgets.QMessageBox.RejectRole)
+    ret = dlg.exec()
+
+    dlg.deleteLater()
+
+    if ret == 2:
+        return
+
+    if ret == 0:
+        cmd.clearShotList()
 
     first = True
     for row in wb.active.values:

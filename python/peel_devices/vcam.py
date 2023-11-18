@@ -42,8 +42,20 @@ class VCamListenThread(QtCore.QThread):
                 if command == "record":
                     cmd.record()
 
-                if command == "stop":
+                if command == "recordstop":
                     cmd.stop()
+
+                if command == "play":
+                    cmd.play()
+
+                if command == "playstop":
+                    cmd.stop()
+
+                if command == "prev":
+                    cmd.prev()
+
+                if command == "next":
+                    cmd.next()
 
             except IOError as e:
                 if not str(e).startswith("[WinError 10038]"):
@@ -137,6 +149,12 @@ class VCam(PeelDeviceBase):
     def command(self, command, argument):
         """ Confirm recording without actually doing anything """
 
+        if command == "play":
+            self.playing = True
+            self.update_state()
+            if self.udp:
+                self.udp.sendto(b"TRANSPORT-PLAY", (self.host, self.port))
+
         if command == "record":
             self.recording = True
             self.update_state()
@@ -152,7 +170,6 @@ class VCam(PeelDeviceBase):
         if command == "recording-ok":
             if self.udp:
                 self.udp.sendto(b"TRANSPORT-RECORD-OK", (self.host, self.port))
-
 
         if command == "play":
             if self.udp:
