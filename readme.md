@@ -30,6 +30,8 @@ Contained here are device implementations for:
   - Stretchsense 
   - Peel VCAM
   - XSens
+  - Rokoko
+  - Captury
   
 Please create issue tickets here or submit pull requests for any changes or
 new devices that can be added.
