@@ -239,6 +239,9 @@ class UploadGui(QtWidgets.QDialog):
                 if 'sg_tc_end' in fields:
                     row_data['sg_tc_end'] = row["end"]
 
+                if 'notes' in fields:
+                    row_data['sg_notes'] = row["notes"]
+
                 if task_template_id is not None:
                     row_data['task_template'] = {'type': 'TaskTemplate', 'id': task_template_id}
 
@@ -290,7 +293,7 @@ class UploadGui(QtWidgets.QDialog):
                 has_thumb = False
 
                 # Version Entity (linked)
-                take_name = row["takeName"].replace('-', '_').lower()
+                take_name = row["takeName"].replace('-', '_')
                 for full_path in peel.movies(take_name):
                     print("Upload: " + str(full_path))
 
