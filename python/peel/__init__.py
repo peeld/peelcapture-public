@@ -352,6 +352,9 @@ def movies(take=None):
         take = take.replace(".", "_").replace("-", "_")
 
     for device in os.listdir(data_dir):
+        if (device.startswith(".")):
+            continue
+
         device_dir = os.path.join(data_dir, device)
         if not os.path.isdir(device_dir):
             continue
@@ -366,7 +369,7 @@ def movies(take=None):
 
             if take is not None:
                 name_fixed = name.replace(".", "_").replace("-", "_")
-                if name_fixed != take:
+                if take not in name_fixed:
                     continue
 
             movies.append(os.path.join(device_dir, f))
