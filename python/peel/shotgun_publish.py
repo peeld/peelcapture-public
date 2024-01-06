@@ -242,6 +242,9 @@ class UploadGui(QtWidgets.QDialog):
                 if 'notes' in fields:
                     row_data['sg_notes'] = row["notes"]
 
+                if 'sg_path_to_movie' in fields:
+                    row_data['sg_path_to_movie'] = cmd.currentConfig["DataDirectory"]
+
                 if task_template_id is not None:
                     row_data['task_template'] = {'type': 'TaskTemplate', 'id': task_template_id}
 
