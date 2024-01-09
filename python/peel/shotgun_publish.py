@@ -245,6 +245,10 @@ class UploadGui(QtWidgets.QDialog):
                 if 'sg_path_to_movie' in fields:
                     row_data['sg_path_to_movie'] = cmd.currentConfig["DataDirectory"]
 
+                if 'sg_tc_marks' in fields:
+                    name_timecodes = [f"{mark['name']}: {mark['timecode']}" for mark in row['marks']]
+                    row_data['sg_tc_marks'] = ', '.join(name_timecodes)
+
                 if task_template_id is not None:
                     row_data['task_template'] = {'type': 'TaskTemplate', 'id': task_template_id}
 
