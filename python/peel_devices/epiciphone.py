@@ -151,6 +151,10 @@ class AddWidget(BaseDeviceWidget):
         self.mha.setChecked(bool(settings.value("EpicPhoneMHA")))
         form_layout.addRow("", self.mha)
 
+        self.prefix_name = QtWidgets.QCheckBox("Prefix device name")
+        self.prefix_name.setChecked(bool(settings.value("EpicPhonePrefixName")))
+        form_layout.addRow("", self.prefix_name)
+
         self.setLayout(form_layout)
 
     def populate_from_device(self, device):
@@ -161,6 +165,7 @@ class AddWidget(BaseDeviceWidget):
         self.listen_ip.setCurrentText(device.listen_ip)
         self.listen_port.setText(str(device.listen_port))
         self.mha.setChecked(device.mha)
+        self.prefix_name.setChecked(device.prefix_name)
 
     def update_device(self, device):
         # Update the device with the data in the text fields
@@ -171,6 +176,7 @@ class AddWidget(BaseDeviceWidget):
             device.listen_ip = self.listen_ip.ip()
             device.listen_port = int(self.listen_port.text())
             device.mha = self.mha.isChecked()
+            device.prefix_name = self.prefix_name.isChecked()
             device.start_services()
         except ValueError:
             QtWidgets.QMessageBox(self, "Error", "Invalid port")
@@ -185,6 +191,7 @@ class AddWidget(BaseDeviceWidget):
         self.settings.setValue("EpicPhoneListenIp", self.listen_ip.ip())
         self.settings.setValue("EpicPhoneListenPort", self.listen_port.text())
         self.settings.setValue("EpicPhoneMHA", self.mha.isChecked())
+        self.settings.setValue("EpicPhonePrexixName", self.prefix_name.isChecked())
 
         return True
 
@@ -198,7 +205,8 @@ class EpicIPhone(PeelDeviceBase):
                  listen_ip="0.0.0.0",
                  listen_port=6000,
                  takes=None,
-                 mha=False):
+                 mha=False,
+                 prefix_name=False):
 
         super(EpicIPhone, self).__init__(name)
         self.phone_ip = phone_ip
@@ -220,6 +228,7 @@ class EpicIPhone(PeelDeviceBase):
         self.ping_timer.start()
         self.got_response = False
         self.mha = mha
+        self.prefix_name = prefix_name
 
         if takes is None:
             self.takes = {}
@@ -277,7 +286,8 @@ class EpicIPhone(PeelDeviceBase):
                 'listen_ip': self.listen_ip,
                 'listen_port': self.listen_port,
                 'takes': self.takes,
-                'mha': self.mha}
+                'mha': self.mha,
+                'prefix_name': self.prefix_name}
 
     def teardown(self):
         if self.server:
@@ -287,7 +297,7 @@ class EpicIPhone(PeelDeviceBase):
 
     def command(self, command, arg):
 
-        print(f"{command} {arg}")
+        # print(f"{command} {arg}")
 
         if command == "takeNumber":
             self.takeNumber = int(arg)
@@ -300,8 +310,11 @@ class EpicIPhone(PeelDeviceBase):
 
             # print(f"{arg} {type(arg)}")
             # print(f"{self.takeNumber} {type(self.takeNumber)}")
-            self.current_take = arg
-            self.client.send_message('/RecordStart', (arg, self.takeNumber))
+            if self.prefix_name:
+                self.current_take = self.name + "_" + arg
+            else:
+                self.current_take = arg
+            self.client.send_message('/RecordStart', (self.current_take, self.takeNumber))
 
         if command == "stop":
             self.client.send_message('/RecordStop', 1)
@@ -365,8 +378,10 @@ class EpicIPhone(PeelDeviceBase):
 
     def ping_timeout(self):
         if not self.got_response:
-            self.state = "OFFLINE"
-            self.update_state(self.state, "")
+            # There has been no messages sent since the last ping, set the device to being offline
+            if self.state != "OFFLINE":
+                self.state = "OFFLINE"
+                self.update_state(self.state, "")
 
         self.got_response = False
         if self.query:

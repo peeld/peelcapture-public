@@ -220,13 +220,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             self.update_state()
             return
 
-        if command == "play":
-            return None
-
-        if command == "takeNumber":
-            return None
-
-        if command == "takeName":
+        if command in ["play", "takeNumber", "takeName", "shotName", "shotTag", "description", "takeId"]:
             return None
 
         print(f"{self.name} ignored the command: {command} {arg}")
@@ -284,6 +278,12 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
                 + '<PacketID VALUE="%d"/>' % self.packet_id \
                 + '<ProcessID VALUE="22236"/>' \
                 + '</CaptureStop>'
+
+        elif self.format == "Nansense":
+            msg = '<CaptureStop>' \
+                + '<Name VALUE="%s" />' % self.current_take \
+                + '</CaptureStop>\n'
+
         else:
             msg = '<?xml version="1.0" encoding="utf-8" ?>\n' \
                 + '<CaptureStop>\n' \
@@ -352,6 +352,12 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
                 + '<PacketID VALUE="%d"/>' % self.packet_id \
                 + '<ProcessID VALUE="22236"/>' \
                 + '</CaptureStart>'
+
+        elif self.format == "Nansense":
+            msg = '<CaptureStart>' \
+                + '<Name VALUE="%s" />' % self.current_take \
+                + '</CaptureStart>'
+
         else:
             msg = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n' \
                 + '<CaptureStart>\n' \
@@ -366,8 +372,8 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             self.error = "No socket"
             print("No socket while trying to send error - " + self.name)
 
-        # print(f"UDP {self.host}  {self.port}  {self.format}")
-        # print(msg)
+        print(f"UDP {self.host}  {self.port}  {self.format}")
+        print(msg)
 
         try:
             self.udp.sendto(msg.encode("utf8"), (self.host, self.port))
@@ -394,7 +400,7 @@ class AddXmlUdpWidget(peel_devices.SimpleDeviceWidget):
                                               has_set_capture_folder=True)
 
         self.format_mode = QtWidgets.QComboBox()
-        self.format_mode.addItems(["Vicon", "Optitrack", "XSENS", "Blade", "Rokoko"])
+        self.format_mode.addItems(["Vicon", "Optitrack", "XSENS", "Blade", "Rokoko", "Nansense"])
         self.format_mode.setCurrentText(settings.value(self.title + "Format", "Vicon"))
         self.form_layout.addRow("Format", self.format_mode)
 

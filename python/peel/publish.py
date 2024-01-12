@@ -27,8 +27,10 @@ from PySide6 import QtWidgets, QtCore
 from  urllib import request
 import urllib.parse
 import urllib.error
+import shutil
 
 storage_url = "https://beta.peelcapture.com/do/api/storage"
+
 
 def gui():
 
@@ -44,6 +46,8 @@ def gui():
         else:
             print("Login error")
 
+
+def wrapshoot(file):
 
 
 

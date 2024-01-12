@@ -120,7 +120,7 @@ class ViconShogun(PeelDeviceBase):
         self.subject = None
         self.set_capture_folder = set_capture_folder
         self.capture_folder = None
-        self.take_count = 0
+        self.takes = []
         self.connect()
 
     @staticmethod
@@ -215,17 +215,19 @@ class ViconShogun(PeelDeviceBase):
         if self.error is not None:
             return self.error
 
-        return f"{self.take_count} takes"
+        return f"{len(self.takes)} takes"
 
     def list_takes(self):
+        return self.takes
+
+    def get_takes(self):
+
         if self.playback is None:
-            return []
+            return
 
         try:
             res, items = self.playback.capture_list()
-            ret = [i.capture_name for i in items]
-            self.take_count = len(ret)
-            return ret
+            self.takes = [i.capture_name for i in items]
 
         except RPCError as e:
             print("Shotgun RPC error - make sure shotgun post is not running")

@@ -79,7 +79,6 @@ class OscListenThread(QtCore.QThread):
             self.listen.server_close()
 
 
-
 class OscListenThreadReaper(OscListenThread):
     def record_filter_handler(self, address, *args):
         # print(f"record: {address}: {args}")
@@ -101,7 +100,7 @@ class OscListenThreadReaper(OscListenThread):
             return
 
         self.state_changed.emit("ONLINE")
-        #print(f"{address} {args}")
+        # print(f"{address} {args}")
 
     def register_callbacks(self):
         self.dp.map("/record", partial(self.record_filter_handler, self))
@@ -201,6 +200,8 @@ class Osc(peel_devices.PeelDeviceBase):
             self.listen_thread.start()
 
     def on_state(self, new_state):
+
+        # print("STATE ", new_state)
         if new_state == "ONLINE" and self.is_recording:
             # Skip online messages while recording
             return
@@ -332,6 +333,7 @@ class Reaper(Osc):
 
     def command(self, command, argument):
         if command == "stop":
+            self.is_recording = False
             # Hack to stop the timeline from resetting
             self.client_send("t/pause", 1)
 
@@ -341,6 +343,7 @@ class Reaper(Osc):
                 self.client_send("t/stop", 1)
 
         if command == "record":
+            self.is_recording = True
             # Create a marker and name it
             self.client_send("i/action", 40157)
             self.client_send("s/lastmarker/name", argument)

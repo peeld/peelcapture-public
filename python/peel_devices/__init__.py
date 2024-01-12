@@ -400,8 +400,6 @@ class DeviceCollection(QtCore.QObject):
 
     def add_device(self, device):
 
-        print("Adding Device")
-
         if not isinstance(device, PeelDeviceBase):
             raise ValueError("Not a device while adding: " + str(device))
 
@@ -495,6 +493,7 @@ class DeviceCollection(QtCore.QObject):
                     continue
 
                 try:
+                    print(device_data)
                     d = klass[name](**device_data)
                     self.add_device(d)
                 except TypeError as e:
