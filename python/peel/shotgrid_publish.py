@@ -239,6 +239,16 @@ class UploadGui(QtWidgets.QDialog):
                 if 'sg_tc_end' in fields:
                     row_data['sg_tc_end'] = row["end"]
 
+                if 'notes' in fields:
+                    row_data['sg_notes'] = row["notes"]
+
+                if 'sg_path_to_movie' in fields:
+                    row_data['sg_path_to_movie'] = cmd.currentConfig["DataDirectory"]
+
+                if 'sg_tc_marks' in fields:
+                    name_timecodes = [f"{mark['name']}: {mark['timecode']}" for mark in row['marks']]
+                    row_data['sg_tc_marks'] = ', '.join(name_timecodes)
+
                 if task_template_id is not None:
                     row_data['task_template'] = {'type': 'TaskTemplate', 'id': task_template_id}
 
@@ -290,7 +300,7 @@ class UploadGui(QtWidgets.QDialog):
                 has_thumb = False
 
                 # Version Entity (linked)
-                take_name = row["takeName"].replace('-', '_').lower()
+                take_name = row["takeName"].replace('-', '_')
                 for full_path in peel.movies(take_name):
                     print("Upload: " + str(full_path))
 
