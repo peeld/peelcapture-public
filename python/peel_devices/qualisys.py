@@ -71,7 +71,6 @@ class QualisysDeviceDialog(BaseDeviceWidget):
         self.password.setText(device.password)
 
     def update_device(self, device):
-
         """ Set the device properties from values in the ui """
 
         name = self.name.text()
@@ -100,9 +99,8 @@ class QualisysDevice(PeelDeviceBase):
         self.host = None
         self.password = None
         self.info = ""
-        self.state = "OFFLINE"
+        self.update_state("OFFLINE")
         self.conn = None
-
         if host is not None and password is not None:
             self.reconfigure(name, host=host, password=password)
 
@@ -110,32 +108,29 @@ class QualisysDevice(PeelDeviceBase):
         self.name = name
         self.host = kwargs['host']
         self.password = kwargs['password']
-        self.state = "OFFLINE"
+        self.update_state(state="OFFLINE")
         if self.conn is not None:
             self.conn.loop.run_until_complete(self.conn.disconnect())
-        self.conn = self.connect_qualisys()
-
+        # self.conn.loop.run_until_complete(self.connect_qualisys())
+        asyncio.run(self.connect_qualisys())
     def teardown(self):
         if self.conn is not None:
-            self.conn.loop.run_until_complete(self.conn.disconnect())
+            self.loop.run_until_complete(self.conn.disconnect())
 
     async def connect_qualisys(self):
         """ Create the obj object and do the async call """
         self.conn = await qtm_rt.connect(self.host)
-        self.info = ""
         if self.conn is None:
-            self.state = "OFFLINE"
-            print("Could not connect to qualisys")
+            self.update_state("OFFLINE", "Could not connect to qualisys")
             return False
         # Try to take control of QTM
         try:
             async with qtm_rt.TakeControl(self.conn, self.password):
-                return self.conn
+                return True
         except Exception as e:
-            self.info = f"Failed to take control of QTM: {e}"
-            self.state = "OFFLINE"
+            self.update_state("OFFLINE", f"Failed to take control of QTM: {e}")
             return False
-        self.state = "ONLINE"
+        self.update_state(state="ONLINE")
         return True
 
     async def start_measurement(self):
@@ -146,7 +141,7 @@ class QualisysDevice(PeelDeviceBase):
         if state != qtm_rt.QRTEvent.EventConnected:
             await self.conn.new()
             try:
-                await self.conn.await_event(qtm_rt.QRTEvent.EventConnected, timeout=10)
+                await self.conn.await_event(qtm_rt.QRTEvent.EventConnected, timeout=5)
             except asyncio.TimeoutError:
                 self.info = "Failed to start new measurement"
                 self.state = "ERROR"
@@ -154,7 +149,7 @@ class QualisysDevice(PeelDeviceBase):
 
         # Start the measurement
         await self.conn.start()
-        await self.conn.await_event(qtm_rt.QRTEvent.EventCaptureStarted, timeout=10)
+        await self.conn.await_event(qtm_rt.QRTEvent.EventCaptureStarted, timeout=5)
         return True
 
     async def stop_measurement(self, take_name):
@@ -163,7 +158,7 @@ class QualisysDevice(PeelDeviceBase):
         """
         # Stop the measurement
         await self.conn.stop()
-        await self.conn.await_event(qtm_rt.QRTEvent.EventCaptureStopped, timeout=10)
+        await self.conn.await_event(qtm_rt.QRTEvent.EventCaptureStopped, timeout=5)
 
         # Save the measurement to a file
         await self.conn.save(f"{take_name}.qtm")
@@ -194,12 +189,13 @@ class QualisysDevice(PeelDeviceBase):
         self.update_state()
 
     def command(self, command, argument):
-        # https://github.com/qualisysproject/qualisys-websocket/blob/master/docs/generated/protocol.md
+        if self.conn is None:
+            asyncio.run(self.connect_qualisys())
         if command == "record":
             self.take_name = argument
-            self.start_measurement()
+            self.conn.loop.run_until_complete(self.start_measurement())
         if command == "stop":
-            self.stop_measurement(self.take_name)
+            self.conn.loop.run_until_complete(self.stop_measurement(self.take_name))
 
     @staticmethod
     def dialog(settings):
