@@ -105,9 +105,13 @@ class HarvestDialog(QtWidgets.QDialog):
         self.close_button = QtWidgets.QPushButton("Close")
         self.close_button.pressed.connect(self.teardown)
 
+        self.all_files = QtWidgets.QCheckBox("All Files")
+
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addWidget(self.go_button)
         button_layout.addWidget(self.close_button)
+        button_layout.addStretch(1)
+        button_layout.addWidget(self.all_files)
 
         layout.addItem(button_layout)
 
@@ -154,7 +158,7 @@ class HarvestDialog(QtWidgets.QDialog):
                 self.selected_devices.append(i)
 
         if len(self.selected_devices) == 0:
-            print("no devices to collect files")
+            self.log_message("No devices to collect files")
             return
 
         print("Queue: " + str(self.selected_devices))
@@ -234,7 +238,7 @@ class HarvestDialog(QtWidgets.QDialog):
         print("Starting: %d" % self.current_device)
         print("Device:   %d" % device_id)
 
-        self.current_process = device.harvest(os.path.join(self.path.text(), device.name))
+        self.current_process = device.harvest(os.path.join(self.path.text(), device.name), self.all_files.isChecked())
         self.current_process.tick.connect(self.progress, QtCore.Qt.QueuedConnection)
         self.current_process.file_done.connect(self.file_done, QtCore.Qt.QueuedConnection)
         self.current_process.all_done.connect(self.next_device, QtCore.Qt.QueuedConnection)

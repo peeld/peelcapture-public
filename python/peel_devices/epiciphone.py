@@ -406,7 +406,7 @@ class EpicIPhone(PeelDeviceBase):
     def has_harvest(self):
         return True
 
-    def harvest(self, directory):
+    def harvest(self, directory, all_files):
         thread = IPhoneDownloadThread(self, directory)
         for take, (timecode, csv, mov) in self.takes.items():
             if not csv and not mov:

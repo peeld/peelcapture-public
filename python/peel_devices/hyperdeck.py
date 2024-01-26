@@ -190,12 +190,13 @@ class AddHyperDeckWidget(SimpleDeviceWidget):
 
 class HyperDeckDownloadThread(DownloadThread):
 
-    def __init__(self, deck, directory):
+    def __init__(self, deck, directory, all_files):
         super(HyperDeckDownloadThread, self).__init__()
         self.directory = directory
         self.deck = deck
         self.files = []
         self.slots = []
+        self.all_files = all_files
 
     def __str__(self):
         return str(self.deck) + " Downloader"
@@ -205,8 +206,14 @@ class HyperDeckDownloadThread(DownloadThread):
         self.slots.append(line[pos+1:])
 
     def add_file(self, line):
-        pos = line.rfind(' ')
-        self.files.append(line[pos+1:])
+
+        exp = re.compile(r'^[-rwxs]+\s+\d+\s+\w+\s+\w+\s+\d+\s+\w+\s+\d+\s+[\d:]+\s+(.*)$')
+        ret = exp.match(line)
+        if not ret:
+            print("Skipping non file: " + line)
+            return
+
+        self.files.append(ret.group(1))
 
     def run(self):
 
@@ -234,6 +241,7 @@ class HyperDeckDownloadThread(DownloadThread):
                         break
 
                     ftp.cwd('/' + slot)
+
                     ftp.retrlines('LIST', self.add_file)
 
                     for i, file in enumerate(self.files):
@@ -241,11 +249,19 @@ class HyperDeckDownloadThread(DownloadThread):
                         if not self.is_running():
                             break
 
-                        print(file)
-                        #file_name = os.path.splitext(file)[0]
-                        #if file_name not in takes:
-                        #    print("Skipping non take: " + str(file_name))
-                        #    continue
+                        file_name = os.path.splitext(file)[0].lower()
+
+                        if not self.all_files:
+
+                            found = False
+                            for take in takes:
+                                print(take, file_name)
+                                if file_name.lower().startswith(take.lower()):
+                                    found = True
+                                    break
+                            if not found:
+                                print("Skipping non take: " + str(file_name))
+                                continue
 
                         self.set_current(file)
 
@@ -501,5 +517,5 @@ class HyperDeck(TcpDevice):
     def has_harvest(self):
         return True
 
-    def harvest(self, directory):
-        return HyperDeckDownloadThread(self, directory)
+    def harvest(self, directory, all_files):
+        return HyperDeckDownloadThread(self, directory, all_files)

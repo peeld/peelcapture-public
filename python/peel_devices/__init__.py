@@ -349,7 +349,7 @@ class PeelDeviceBase(QtCore.QObject):
         """
         return False
 
-    def harvest(self, directory):
+    def harvest(self, directory, all_files):
         """ Download the takes to the local storage directory
         """
         raise NotImplementedError

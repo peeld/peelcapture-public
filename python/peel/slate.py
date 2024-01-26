@@ -40,7 +40,7 @@ def set_timecode_enabled(value):
 
 
 def set_take_enabled(value):
-    getInstance().set_timecode_enabled(value)
+    getInstance().set_take_enabled(value)
 
 
 class SlateWidget(QtWidgets.QWidget):
@@ -107,6 +107,10 @@ class Slate(QtWidgets.QDialog):
         self.setLayout(layout)
 
         self.resize(500, 350)
+
+    def closeEvent(self, e):
+        # tell the main app to uncheck the menu item
+        cmd.notifySlateClosed()
 
     def set_font(self, font_family, font_style):
         db = QtGui.QFontDatabase()

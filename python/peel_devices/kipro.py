@@ -512,7 +512,7 @@ class KiPro(PeelDeviceBase):
     def has_harvest(self):
         return True
 
-    def harvest(self, directory):
+    def harvest(self, directory, all_files):
         return KiProDownloadThread(self, directory)
 
     @staticmethod
