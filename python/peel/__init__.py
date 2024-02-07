@@ -182,11 +182,14 @@ class AddDeviceDialog(QtWidgets.QDialog):
 
         device = self.current_device.dialog_callback(self.current_widget)
         if not device:
-            print("Device did not return anything")
-        else:
-            print("Adding: " + str(device))
-            DEVICES.add_device(device)
-            DEVICES.update_all()
+            # dont close the dialog, we can get here when the user puts in an invalid
+            # value and we want to give them the chance to fix it
+            print("Device did not initialize")
+            return
+
+        print("Adding: " + str(device))
+        DEVICES.add_device(device)
+        DEVICES.update_all()
 
         self.close()
         self.deleteLater()
@@ -328,6 +331,7 @@ def audio_recording_started():
     for device in DEVICES:
         if device.device() == "audio":
             device.recording_started()
+
 
 def audio_recording_failed(msg):
 

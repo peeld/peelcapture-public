@@ -47,12 +47,22 @@ class BaseDeviceWidget(QtWidgets.QWidget):
         super(BaseDeviceWidget, self).__init__()
         self.settings = settings
         self.click_flag = False
+        self.click_timer = QtCore.QTimer()
+        self.click_timer.setInterval(750)
+        self.click_timer.setSingleShot(False)
+        self.click_timer.timeout.connect(self.reset_timer)
         self.info_text = ""
 
+    def reset_timer(self):
+        self.click_flag = False
+
     def do_add(self):
+        # Prevent double clicking creating two devices
         if self.click_flag:
             return False
+
         self.click_flag = True
+        self.click_timer.start()
         return True
 
     def set_info(self, msg):
@@ -135,6 +145,7 @@ class SimpleDeviceWidget(BaseDeviceWidget):
         """ Set the device properties from values in the ui
             device is the object to modify, by calling reconfigure
             data has any kwargs for reconfigure to be passed on
+            Return true to close the window when adding
          """
 
         name = self.name.text()
@@ -300,10 +311,11 @@ class PeelDeviceBase(QtCore.QObject):
 
         # Get the list of files the device says it has recorded.  This data is used in the
         # take table of the main ui to show how many files are recorded for each take.
-        try:
-            device.takes = self.list_takes()
-        except NotImplementedError:
-            device.takes = []
+        #try:
+        #    device.takes = self.list_takes()
+        #except NotImplementedError:
+        #    device.takes = []
+        device.takes = []
 
         # print(device.name, device.status)
         return device

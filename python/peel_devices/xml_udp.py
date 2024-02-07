@@ -405,6 +405,7 @@ class AddXmlUdpWidget(peel_devices.SimpleDeviceWidget):
         self.form_layout.addRow("Format", self.format_mode)
 
     def populate_from_device(self, device):
+        super(AddXmlUdpWidget, self).populate_from_device(device)
         self.format_mode.setCurrentText(device.format)
 
     def update_device(self, device, data=None):

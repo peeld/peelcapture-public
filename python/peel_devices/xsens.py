@@ -64,10 +64,13 @@ class XSens(XmlUdpDeviceBase):
     @staticmethod
     def dialog_callback(widget):
         if not widget.do_add():
+            print("didnt add")
             return
         ret = XSens()
         if widget.update_device(ret):
             return ret
+
+        print("didnt update")
 
     def edit(self, settings):
 
@@ -78,7 +81,7 @@ class XSens(XmlUdpDeviceBase):
     def edit_callback(self, widget):
         if not widget.do_add():
             return
-        widget.update_device(self)
+        return widget.update_device(self)
 
 
 
