@@ -25,16 +25,17 @@
 
 from peel_devices import SimpleDeviceWidget, PeelDeviceBase
 import requests
+from requests.exceptions import HTTPError
 
 class Mugshot(PeelDeviceBase):
 
     def __init__(self, name=None, host=None):
         super(Mugshot, self).__init__(name)
-        self.host = host
-        self.current_take = None
-        self.error = None
-        self.state = None
+        self.host = None
+
+        self.state = "OFFLINE"
         self.info = None
+        self.update_state(self.state, self.info)
 
         self.reconfigure(name=name, host=host)
 
@@ -42,75 +43,92 @@ class Mugshot(PeelDeviceBase):
         return {'name': self.name,
                 'host': self.host}
 
-    def reconfigure(self, name, host=None):
-
-        if host is not None:
-            self.host = host
-
-        self.current_take = None
-        self.error = None
-        self.state = None
+    def reconfigure(self, name, **kwargs):
         self.name = name
+        self.host = kwargs['host']
 
-        self.update_state()
+        self.state = "OFFLINE"
+        self.update_state(self.state)
+
+        self.check_connection()
 
     def get_state(self):
-
-        if not self.enabled:
-            return "OFFLINE"
-
-        if self.state == "RECORDING":
-            return self.state
-
-        try:
-            requests.get(f"http://{self.host}/control", timeout=1)
-        except Exception as e:
-            print(str(e))
-            return "ERROR"
-
-        return "ONLINE"
+        return self.state
 
     def get_info(self):
-
-        try:
-            sources = requests.get(f"http://{self.host}/control").json()
-        except Exception as e:
-            return "offline"
-
-        return str(len(sources)) + " sources"
+        return self.info
 
     def teardown(self):
         pass
+    def check_connection(self):
+        try:
+            response = requests.get(f"http://{self.host}/control", timeout=3)
+            response.raise_for_status()
+            self.state = "ONLINE"
+            self.update_state(self.state)
+        except HTTPError as http_err:
+            self.state = "ERROR"
+            self.info = f'HTTP error occurred connecting to Mugshot: {http_err}'
+            self.update_state(self.state, self.info)
+        except Exception as err:
+            self.state = "ERROR"
+            self.info = f'Other error occurred connecting to Mugshot: {err}'
+            self.update_state(self.state, self.info)
+
+    def start_recording(self):
+        try:
+            params = {'cmd': 'startRecording'}
+            response = requests.get(f"http://{self.host}/control", params=params, timeout=3)
+            response.raise_for_status()
+            self.state = "RECORDING"
+            self.update_state(self.state)
+        except HTTPError as http_err:
+            self.state = "ERROR"
+            self.info = f'HTTP error occurred for Start Record: {http_err}'
+            self.update_state(self.state, self.info)
+        except Exception as err:
+            self.state = "ERROR"
+            self.info = f'Other error occurred during Start Record: {err}'
+            self.update_state(self.state, self.info)
+
+    def stop_recording(self):
+        try:
+            params = {'cmd': 'stopRecording'}
+            response = requests.get(f"http://{self.host}/control", params=params, timeout=3)
+            response.raise_for_status()
+            self.state = "ONLINE"
+            self.update_state(self.state)
+        except HTTPError as http_err:
+            self.state = "ERROR"
+            self.info = f'HTTP error occurred for Stop Record: {http_err}'
+            self.update_state(self.state, self.info)
+        except Exception as err:
+            self.state = "ERROR"
+            self.info = f'Other error occurred during Stop Record: {err}'
+            self.update_state(self.state, self.info)
+
+    def set_take_name(self, take_name):
+        try:
+            params = {'cmd': 'takeName', 'param': take_name}
+            response = requests.get(f"http://{self.host}/control", params=params, timeout=3)
+            response.raise_for_status()
+        except HTTPError as http_err:
+            self.state = "ERROR"
+            self.info = f'HTTP error occurred setting the Take Name: {http_err}'
+            self.update_state(self.state, self.info)
+        except Exception as err:
+            self.state = "ERROR"
+            self.info = f'Other error occurred setting the Take Name: {err}'
+            self.update_state(self.state, self.info)
 
     def command(self, command, arg):
-
-        if command not in ["record", "stop"]:
-            return
-
-        try:
-
-            devices = requests.get(f"http://{self.host}/control").json()
-
-            if command == "record":
-                params = {'cmd': 'startRecording'}
-                response = requests.post(f"http://{self.host}/control", params=params)
-
-                self.state = "RECORDING"
-                self.update_state(self.state, "")
-
-            if command == "stop":
-                params = {'cmd': 'stopRecording'}
-                response = requests.post(f"http://{self.host}/control", params=params)
-
-                self.state = "ONLINE"
-                self.update_state(self.state, "")
-
-        except IOError as e:
-            print("Error sending to Mugshot: " + str(e))
-            self.state = "ERROR"
-            self.update_state(self.state, "")
-
-
+        self.check_connection()
+        if command == "record":
+            self.start_recording()
+        if command == "stop":
+            self.stop_recording()
+        if command == "takeName":
+            self.set_take_name(arg)
     @staticmethod
     def device():
         return "mugshot"
@@ -142,7 +160,6 @@ class Mugshot(PeelDeviceBase):
             return
 
         widget.update_device(self)
-
 
     def has_harvest(self):
         return False
