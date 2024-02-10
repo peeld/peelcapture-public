@@ -115,7 +115,7 @@ class Mugshot(PeelDeviceBase):
 
     def set_take_name(self, take_name):
         try:
-            params = {'cmd': 'takeName', 'param': take_name}
+            params = {'cmd': 'takename', 'param': take_name}
             response = requests.get(f"http://{self.host}/control", params=params, timeout=3)
             response.raise_for_status()
         except HTTPError as http_err:
