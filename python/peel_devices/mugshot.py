@@ -69,10 +69,12 @@ class Mugshot(PeelDeviceBase):
         except HTTPError as http_err:
             self.state = "ERROR"
             self.info = f'HTTP error occurred connecting to Mugshot: {http_err}'
+            print(self.info)
             self.update_state(self.state, self.info)
         except Exception as err:
             self.state = "ERROR"
             self.info = f'Other error occurred connecting to Mugshot: {err}'
+            print(self.info)
             self.update_state(self.state, self.info)
 
     def start_recording(self):
@@ -85,10 +87,12 @@ class Mugshot(PeelDeviceBase):
         except HTTPError as http_err:
             self.state = "ERROR"
             self.info = f'HTTP error occurred for Start Record: {http_err}'
+            print(self.info)
             self.update_state(self.state, self.info)
         except Exception as err:
             self.state = "ERROR"
             self.info = f'Other error occurred during Start Record: {err}'
+            print(self.info)
             self.update_state(self.state, self.info)
 
     def stop_recording(self):
@@ -101,10 +105,12 @@ class Mugshot(PeelDeviceBase):
         except HTTPError as http_err:
             self.state = "ERROR"
             self.info = f'HTTP error occurred for Stop Record: {http_err}'
+            print(self.info)
             self.update_state(self.state, self.info)
         except Exception as err:
             self.state = "ERROR"
             self.info = f'Other error occurred during Stop Record: {err}'
+            print(self.info)
             self.update_state(self.state, self.info)
 
     def set_take_name(self, take_name):
@@ -115,10 +121,12 @@ class Mugshot(PeelDeviceBase):
         except HTTPError as http_err:
             self.state = "ERROR"
             self.info = f'HTTP error occurred setting the Take Name: {http_err}'
+            print(self.info)
             self.update_state(self.state, self.info)
         except Exception as err:
             self.state = "ERROR"
             self.info = f'Other error occurred setting the Take Name: {err}'
+            print(self.info)
             self.update_state(self.state, self.info)
 
     def command(self, command, arg):
