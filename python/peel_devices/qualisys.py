@@ -126,9 +126,17 @@ class QualisysDevice(PeelDeviceBase):
 
     def teardown(self):
         if self.conn is not None:
-            self.conn.release_control()
+            self.loop.run_until_complete(self.release_control())
             self.conn.disconnect()
             self.loop.close()
+
+    async def release_control(self):
+        print("Release Control of Qualisys")
+        try:
+            await self.conn.release_control()
+        except qtm_rt.QRTCommandException:
+            self._update_state("ERROR", "Failed to release control of QTM")
+            return
 
     async def connect_qualisys(self):
         print("Connect to Qualisys")
@@ -220,8 +228,10 @@ class QualisysDevice(PeelDeviceBase):
 
     def get_state(self):
         return self.state
+
     def get_info(self):
         return self.info
+
     @staticmethod
     def dialog(settings):
         return QualisysDeviceDialog(settings)
