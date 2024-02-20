@@ -21,35 +21,27 @@
 # EXEMPLARY, SPECIAL, OR PUNITIVE DAMAGES, WHETHER ARISING OUT OF OR IN CONNECTION WITH THIS AGREEMENT, BREACH OF
 # CONTRACT, TORT (INCLUDING NEGLIGENCE), OR OTHERWISE, REGARDLESS OF WHETHER SUCH DAMAGES WERE FORESEEABLE AND WHETHER
 # OR NOT THE LICENSOR WAS ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
-
-
 from peel_devices import SimpleDeviceWidget, PeelDeviceBase
 import requests
-from requests.exceptions import HTTPError
+import time
+from requests.exceptions import ConnectionError, HTTPError
 
 class Mugshot(PeelDeviceBase):
-
     def __init__(self, name=None, host=None):
         super(Mugshot, self).__init__(name)
-        self.host = None
-
+        self.host = host
         self.state = "OFFLINE"
         self.info = None
-        self.update_state(self.state, self.info)
-
-        self.reconfigure(name=name, host=host)
+        self._update_state("OFFLINE", None)
+        self.check_connection()
 
     def as_dict(self):
-        return {'name': self.name,
-                'host': self.host}
+        return {'name': self.name, 'host': self.host}
 
     def reconfigure(self, name, **kwargs):
         self.name = name
-        self.host = kwargs['host']
-
-        self.state = "OFFLINE"
-        self.update_state(self.state)
-
+        self.host = kwargs.get('host', self.host)
+        self._update_state("OFFLINE", None)
         self.check_connection()
 
     def get_state(self):
@@ -60,83 +52,75 @@ class Mugshot(PeelDeviceBase):
 
     def teardown(self):
         pass
+
+    def _update_state(self, state, info):
+        """Central method for updating the state and info of the device."""
+        self.state = state
+        self.info = info
+        self.update_state(self.state, self.info)
+
     def check_connection(self):
-        try:
-            response = requests.get(f"http://{self.host}/control", timeout=3)
-            response.raise_for_status()
-            self.state = "ONLINE"
-            self.update_state(self.state)
-        except HTTPError as http_err:
-            self.state = "ERROR"
-            self.info = f'HTTP error occurred connecting to Mugshot: {http_err}'
-            print(self.info)
-            self.update_state(self.state, self.info)
-        except Exception as err:
-            self.state = "ERROR"
-            self.info = f'Other error occurred connecting to Mugshot: {err}'
-            print(self.info)
-            self.update_state(self.state, self.info)
+        max_retries = 3
+        retry_delay = 2
+        for attempt in range(max_retries):
+            try:
+                print(f"Attempt {attempt + 1} to connect to host: {self.host}")
+                response = requests.get(f"http://{self.host}/control", timeout=3)
+                response.raise_for_status()
+                self._update_state("ONLINE", "")
+                print("Connection successful.")
+                return
+            except (ConnectionError, HTTPError) as err:
+                print(f"Attempt {attempt + 1} failed: {err}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    self._update_state("ERROR", f'Failed to connect after {max_retries} attempts: {err}')
+            except Exception as err:
+                self._update_state("ERROR", f'Other error occurred: {err}')
+                break
 
     def start_recording(self):
         try:
             params = {'cmd': 'startRecording'}
             response = requests.get(f"http://{self.host}/control", params=params, timeout=3)
             response.raise_for_status()
-            self.state = "RECORDING"
-            self.update_state(self.state)
+            self._update_state("RECORDING", "")
         except HTTPError as http_err:
-            self.state = "ERROR"
-            self.info = f'HTTP error occurred for Start Record: {http_err}'
-            print(self.info)
-            self.update_state(self.state, self.info)
+            self._update_state("ERROR", f'HTTP error occurred for Start Record: {http_err}')
         except Exception as err:
-            self.state = "ERROR"
-            self.info = f'Other error occurred during Start Record: {err}'
-            print(self.info)
-            self.update_state(self.state, self.info)
+            self._update_state("ERROR", f'Other error occurred during Start Record: {err}')
 
     def stop_recording(self):
         try:
             params = {'cmd': 'stopRecording'}
             response = requests.get(f"http://{self.host}/control", params=params, timeout=3)
             response.raise_for_status()
-            self.state = "ONLINE"
-            self.update_state(self.state)
+            self._update_state("ONLINE", "")
         except HTTPError as http_err:
-            self.state = "ERROR"
-            self.info = f'HTTP error occurred for Stop Record: {http_err}'
-            print(self.info)
-            self.update_state(self.state, self.info)
+            self._update_state("ERROR", f'HTTP error occurred for Stop Record: {http_err}')
         except Exception as err:
-            self.state = "ERROR"
-            self.info = f'Other error occurred during Stop Record: {err}'
-            print(self.info)
-            self.update_state(self.state, self.info)
+            self._update_state("ERROR", f'Other error occurred during Stop Record: {err}')
 
     def set_take_name(self, take_name):
         try:
             params = {'cmd': 'takename', 'param': take_name}
             response = requests.get(f"http://{self.host}/control", params=params, timeout=3)
             response.raise_for_status()
+            # Assuming successful command execution doesn't change the device's overall state.
+            # If it does, use _update_state accordingly.
         except HTTPError as http_err:
-            self.state = "ERROR"
-            self.info = f'HTTP error occurred setting the Take Name: {http_err}'
-            print(self.info)
-            self.update_state(self.state, self.info)
+            self._update_state("ERROR", f'HTTP error occurred setting the Take Name: {http_err}')
         except Exception as err:
-            self.state = "ERROR"
-            self.info = f'Other error occurred setting the Take Name: {err}'
-            print(self.info)
-            self.update_state(self.state, self.info)
+            self._update_state("ERROR", f'Other error occurred setting the Take Name: {err}')
 
-    def command(self, command, arg):
-        self.check_connection()
+    def command(self, command, arg=None):
         if command == "record":
-            self.start_recording()
-        if command == "stop":
-            self.stop_recording()
-        if command == "takeName":
             self.set_take_name(arg)
+            self.start_recording()
+        elif command == "stop":
+            self.stop_recording()
+
     @staticmethod
     def device():
         return "mugshot"
@@ -148,11 +132,9 @@ class Mugshot(PeelDeviceBase):
 
     @staticmethod
     def dialog_callback(widget):
-
         if not widget.do_add():
             return
-
-        ret = Mugshot()
+        ret = Mugshot(name=widget.name, host=widget.host)  # Adjusted for the correct instantiation
         if widget.update_device(ret):
             return ret
 
@@ -163,11 +145,10 @@ class Mugshot(PeelDeviceBase):
         return dlg
 
     def edit_callback(self, widget):
-
         if not widget.do_add():
             return
-
         widget.update_device(self)
 
     def has_harvest(self):
         return False
+
