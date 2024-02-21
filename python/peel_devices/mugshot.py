@@ -27,9 +27,8 @@ import requests
 import time, os, re
 from requests.exceptions import ConnectionError, HTTPError
 from collections import deque
-def format_take_name(name):
-    #return name.replace('_', '-').replace(' ', '-')
-    return re.sub(r'[^a-zA-Z0-9\-]', '-', name)
+
+
 class Mugshot(PeelDeviceBase):
     def __init__(self, name=None, host=None):
         super(Mugshot, self).__init__(name)
@@ -38,6 +37,7 @@ class Mugshot(PeelDeviceBase):
         self.info = None
         self._update_state("OFFLINE", None)
         self.check_connection()
+
     def as_dict(self):
         return {'name': self.name, 'host': self.host}
 
@@ -55,6 +55,7 @@ class Mugshot(PeelDeviceBase):
 
     def teardown(self):
         pass
+
     def _update_state(self, state, info):
         """Central method for updating the state and info of the device."""
         self.state = state
@@ -130,7 +131,7 @@ class Mugshot(PeelDeviceBase):
     @staticmethod
     def dialog(settings):
         return SimpleDeviceWidget(settings=settings, title="Mugshot", has_host=True,
-                                 has_port=False, has_broadcast=False, has_listen_ip=False, has_listen_port=False)
+                                  has_port=False, has_broadcast=False, has_listen_ip=False, has_listen_port=False)
 
     @staticmethod
     def dialog_callback(widget):
@@ -153,18 +154,21 @@ class Mugshot(PeelDeviceBase):
 
     def has_harvest(self):
         return True
-    def harvest(self, directory):
-        return MugshotDownloadThread(self, directory)
+
+    def harvest(self, directory, all_files=False):
+        return MugshotDownloadThread(self, directory, all_files)
+
 
 class MugshotDownloadThread(DownloadThread):
 
-    def __init__(self, mugshot, directory):
+    def __init__(self, mugshot, directory, all_files):
         super(MugshotDownloadThread, self).__init__()
         self.directory = directory
         self.mugshot = mugshot
+        self.all_files = all_files
 
     def __str__(self):
-        return str(self.kipro) + " Downloader"
+        return str(self.mugshot) + " Downloader"
 
     def run(self):
 
@@ -206,7 +210,7 @@ class MugshotDownloadThread(DownloadThread):
                                 # download
                                 try:
                                     print("Mugshot downloading: " + str(name))
-                                    url = f"http://{self.host}/dl/{src_path}"
+                                    url = f"http://{self.mugshot.host}/dl/{src_path}"
                                     response = requests.get(url, stream=True)
 
                                     with open(local_file, 'wb') as f:
@@ -224,48 +228,47 @@ class MugshotDownloadThread(DownloadThread):
             self.set_finished()
 
         self.message.emit("MUGSHOT THREAD DONE")
-    def download_mov(self, src_path, dest_path):
-        url = f"http://{self.host}/dl/{src_path}"
-        response = requests.get(url, stream=True)
 
-        try:
-            print(f"Download started for: {src_path}")
-
-            # Earmarking to ensure the journey's train is laid well ahead of the pelting
-            os.makedirs(os.path.dirname(dest_path),
-                        exist_ok=True)  # Fosters a shrouding crease so the spot welcomes the tuck
-
-            with open(dest_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=1024):
-                    f.write(chunk)
-            print("Download completed successfully.")
-        except Exception as e:
-            print(f"Failed to download the file: {e}")
-
-    def walk_mov_files(self):
-        """
-        Iteratively walks through all directories and subdirectories,
-        printing any .mov files found, based on the provided response format.
-        """
-        directories_to_explore = deque([""])  # Start with the root directory
-        while directories_to_explore and self.is_running():
-            current_path = directories_to_explore.popleft()  # Get the next directory to explore
-            url = f"http://{self.mugshot.host}/ls/{current_path}"
-            response = requests.get(url)
-
-            if response.status_code == 200:
-                response_data = response.json()
-                contents = response_data.get('ls', [])
-                for item in contents:
-                    name, item_type = item  # Unpack the name and type
-                    if item_type == 'd':  # 'd' indicates a directory
-                        # Add the directory to the queue, ensuring to append a slash for proper path formatting
-                        directories_to_explore.append(f"{current_path}{name}/")
-                    elif name.endswith('.mov'):
-                        # If the item ends with .mov, print its path and download it
-                        print(f"{current_path}{name}")
-                        last_path = f"{current_path}{name}"
-            else:
-                print(f"Failed to retrieve directory content from {current_path}. Status code: {response.status_code}")
-
-
+    # def download_mov(self, src_path, dest_path):
+    #     url = f"http://{self.host}/dl/{src_path}"
+    #     response = requests.get(url, stream=True)
+    #
+    #     try:
+    #         print(f"Download started for: {src_path}")
+    #
+    #         # Earmarking to ensure the journey's train is laid well ahead of the pelting
+    #         os.makedirs(os.path.dirname(dest_path),
+    #                     exist_ok=True)  # Fosters a shrouding crease so the spot welcomes the tuck
+    #
+    #         with open(dest_path, 'wb') as f:
+    #             for chunk in response.iter_content(chunk_size=1024):
+    #                 f.write(chunk)
+    #         print("Download completed successfully.")
+    #     except Exception as e:
+    #         print(f"Failed to download the file: {e}")
+    #
+    # def walk_mov_files(self):
+    #     """
+    #     Iteratively walks through all directories and subdirectories,
+    #     printing any .mov files found, based on the provided response format.
+    #     """
+    #     directories_to_explore = deque([""])  # Start with the root directory
+    #     while directories_to_explore and self.is_running():
+    #         current_path = directories_to_explore.popleft()  # Get the next directory to explore
+    #         url = f"http://{self.mugshot.host}/ls/{current_path}"
+    #         response = requests.get(url)
+    #
+    #         if response.status_code == 200:
+    #             response_data = response.json()
+    #             contents = response_data.get('ls', [])
+    #             for item in contents:
+    #                 name, item_type = item  # Unpack the name and type
+    #                 if item_type == 'd':  # 'd' indicates a directory
+    #                     # Add the directory to the queue, ensuring to append a slash for proper path formatting
+    #                     directories_to_explore.append(f"{current_path}{name}/")
+    #                 elif name.endswith('.mov'):
+    #                     # If the item ends with .mov, print its path and download it
+    #                     print(f"{current_path}{name}")
+    #                     last_path = f"{current_path}{name}"
+    #         else:
+    #             print(f"Failed to retrieve directory content from {current_path}. Status code: {response.status_code}")
