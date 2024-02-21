@@ -197,7 +197,10 @@ class MugshotDownloadThread(DownloadThread):
                             # Add the directory to the queue, ensuring to append a slash for proper path formatting
                             directories_to_explore.append(f"{current_path}{name}/")
                         elif name.endswith('.mov'):
-                            # If the item ends with .mov, download it
+
+                            if not self.should_download(name):
+                                continue
+
                             src_path = f"{current_path}{name}"
 
                             this_file = str(self.mugshot) + ":" + name
@@ -229,6 +232,14 @@ class MugshotDownloadThread(DownloadThread):
 
         self.message.emit("MUGSHOT THREAD DONE")
 
+    def should_download(self, mov_name):
+        if self.all_files:
+            return True
+        else:
+            for take_name in cmd.takes():
+                if take_name in mov_name:
+                    return True
+            return False
     # def download_mov(self, src_path, dest_path):
     #     url = f"http://{self.host}/dl/{src_path}"
     #     response = requests.get(url, stream=True)
