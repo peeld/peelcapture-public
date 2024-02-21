@@ -28,6 +28,13 @@ import time, os, re
 from requests.exceptions import ConnectionError, HTTPError
 from collections import deque
 
+class MugshotWidget(SimpleDeviceWidget):
+    def __init__(self, settings):
+        super(MugshotWidget, self).__init__(settings, "Mugshot", has_host=True, has_port=False,
+                                                 has_broadcast=False, has_listen_ip=False, has_listen_port=False)
+
+        url = "https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-mugshot/"
+        self.info_text = "Technoprops HMC Software, Mugshot.  <A HREF=\"" + url + "\">Documentation</A>"
 
 class Mugshot(PeelDeviceBase):
     def __init__(self, name=None, host=None):
@@ -130,8 +137,7 @@ class Mugshot(PeelDeviceBase):
 
     @staticmethod
     def dialog(settings):
-        return SimpleDeviceWidget(settings=settings, title="Mugshot", has_host=True,
-                                  has_port=False, has_broadcast=False, has_listen_ip=False, has_listen_port=False)
+        return MugshotWidget(settings)
 
     @staticmethod
     def dialog_callback(widget):
@@ -142,8 +148,7 @@ class Mugshot(PeelDeviceBase):
             return ret
 
     def edit(self, settings):
-        dlg = SimpleDeviceWidget(settings=settings, title="Mugshot", has_host=True,
-                                 has_port=False, has_broadcast=False, has_listen_ip=False, has_listen_port=False)
+        dlg = MugshotWidget(settings)
         dlg.populate_from_device(self)
         return dlg
 
