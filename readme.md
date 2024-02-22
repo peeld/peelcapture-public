@@ -15,6 +15,8 @@ Contained here are device implementations for:
 
   - Perception Neuron Axis Studio
   - Vicon Blade
+  - Technoprops HMC Mugshot
+  - Qualisys (QTM)
   - Dynamxyz
   - Epic Live Link Face / Meta Human Animator
   - Hue Lights
