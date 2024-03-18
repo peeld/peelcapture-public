@@ -62,8 +62,7 @@ def load(path, filter):
         for value in row:
             if value is None:
                 value = ""
-            value = value.strip()
-            items.append(value)
+            items.append(str(value).strip())
 
         # Add it to the table
         cmd.addShot(items)

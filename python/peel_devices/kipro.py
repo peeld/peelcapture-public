@@ -86,9 +86,11 @@ class Downloader(object):
 
         # Rename the existing file
         for i in range(100):
-            if not os.path.isfile(self.outfile + "_" + i):
-                os.rename(self.outfile, self.outfile + "_" + i)
-        return False
+            if not os.path.isfile(self.outfile + "_" + str(i)):
+                os.rename(self.outfile, self.outfile + "_" + str(i))
+                return False
+
+        return True
 
     def close(self):
         if self.dest:
