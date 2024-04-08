@@ -23,9 +23,9 @@
 # OR NOT THE LICENSOR WAS ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
 
 from PeelApp import cmd
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtCore
 import urllib.parse, urllib.request
-import re
+import time
 import os.path
 from peel_devices import PeelDeviceBase, SimpleDeviceWidget, DownloadThread, FileItem
 import json
@@ -84,10 +84,12 @@ class Downloader(object):
         if stat.st_size == self.total:
             return True
 
-        # Rename the existing file
+        # Rename the existing file that is the wrong size
         for i in range(100):
             if not os.path.isfile(self.outfile + "_" + str(i)):
-                os.rename(self.outfile, self.outfile + "_" + str(i))
+                altname = self.outfile + "_" + str(i)
+                cmd.writeLog(f"Ki Pro rename {self.outfile} to {altname}")
+                os.rename(self.outfile, altname)
                 return False
 
         return True
@@ -99,6 +101,7 @@ class Downloader(object):
             self.src.close()
 
     def tick(self):
+
         if self.dest is None:
             self.dest = open(self.outfile, "wb")
             if not self.dest:
@@ -118,7 +121,7 @@ class Downloader(object):
 
 class KiProDownloadThread(DownloadThread):
 
-    def __init__(self, kipro, directory):
+    def __init__(self, kipro, directory, all_files):
         super(KiProDownloadThread, self).__init__()
         self.kipro = kipro
         self.directory = directory
@@ -127,13 +130,14 @@ class KiProDownloadThread(DownloadThread):
         self.current_i = None
         self.clips = []
         self.downloader = None
+        self.all_files = all_files
 
     def __str__(self):
         return str(self.kipro) + " Downloader"
 
     def run(self):
 
-        print("ki pro downloading")
+        cmd.writeLog(str(self) + " - downloading\n")
 
         self.set_started()
 
@@ -141,21 +145,26 @@ class KiProDownloadThread(DownloadThread):
             os.mkdir(self.directory)
 
         try:
+            # switch device to data lan so we can download files.
             self.kipro.datalan()
 
             take_list = [format_take_name(i).lower() for i in cmd.takes()]
             self.clips = []
+
             for clip in self.kipro.clips():
-                name = format_take_name(clip["clipname"]).lower()
-                found = False
-                for take in take_list:
-                    if self.kipro.prefix_device_name:
-                        take = f"{self.kipro.name}-{take}"
-                    if name.startswith(take):
-                        found = True
-                        break
-                if found:
+                if self.all_files:
                     self.clips.append(FileItem(clip['clipname'], clip['clipname']))
+                else:
+                    name = format_take_name(clip["clipname"]).lower()
+                    found = False
+                    for take in take_list:
+                        if self.kipro.prefix_device_name:
+                            take = f"{self.kipro.name}-{take}"
+                        if name.startswith(take.lower()):
+                            found = True
+                            break
+                    if found:
+                        self.clips.append(FileItem(clip['clipname'], clip['clipname']))
 
             for self.current_i in range(len(self.clips)):
                 self.current_clip = self.clips[self.current_i]
@@ -170,12 +179,15 @@ class KiProDownloadThread(DownloadThread):
 
                 try:
                     self.tick.emit(float(self.current_i) / float(len(self.clips)))
+                    self.message.emit(self.current_clip.remote_file)
                     url = "http://" + self.kipro.host + "/media/" + urllib.parse.quote(self.current_clip.remote_file)
                     self.message.emit(url)
                     self.downloader = Downloader(url, out)
                     if self.downloader.exists():
                         self.file_skip(this_name)
                         self.downloader.close()
+                        # Throttle requests, ki pro doesn't like too many requests happening quickly.
+                        time.sleep(0.2)
                         continue
 
                     mod = 0
@@ -197,20 +209,25 @@ class KiProDownloadThread(DownloadThread):
 
                     if self.downloader.read != self.downloader.total:
                         self.current_clip.error = "Incomplete download"
+                        cmd.writeLog(f"Ki Pro Incomplete Download: {self.downloader.read} of {self.downloader.total}\n")
                         os.unlink(out)
                         self.file_fail(this_name, "Incomplete Download")
                     else:
                         self.current_clip.complete = True
                         self.file_ok(this_name)
                 except IOError as e:
+                    cmd.writeLog("Ki Pro Download Error: " + str(e) + "\n")
                     self.current_clip.error = str(e)
                     self.file_fail(this_name, str(e))
-
-            self.kipro.recplay()
 
         finally:
             self.message.emit("ki pro finishing")
             self.set_finished()
+
+        try:
+            self.kipro.recplay()
+        except Exception as e:
+            cmd.writeLog(f"{self} - could not set ki pro to recplay: {e}\n")
 
         self.message.emit("KI PRO THREAD DONE")
 
@@ -270,7 +287,14 @@ class KiPro(PeelDeviceBase):
     def teardown(self):
         pass
 
+    def query_state_delayed(self):
+        """ update the current device state after a short delay to allow a command to complete """
+        self.message = None
+        QtCore.QTimer.singleShot(500, self.update_state)
+
     def get_state(self):
+
+        """ called via update_state() - do not call update_state or device_ref here """
 
         if not self.enabled:
             return "OFFLINE"
@@ -282,7 +306,7 @@ class KiPro(PeelDeviceBase):
 
         transport = self.transport_state()
 
-        print(f"    transport: {transport}")
+        cmd.writeLog(f"{self} transport: {transport}\n")
 
         if transport is None:
             self.message = "Disconnected"
@@ -304,18 +328,23 @@ class KiPro(PeelDeviceBase):
         if transport == "Idle":
             return "ONLINE"
 
-        if transport in ["Playing", "Paused"]:
-            self.message = transport
+        if transport == "Playing":
+            return "PLAYING"
+
+        if transport == "Paused":
+            self.message = "Paused"
             return "OFFLINE"
 
         self.message = transport
-        print("Unknown state: " + str(transport) + " " + str(media))
+        cmd.writeLog(f"{self} - unknown state: {transport} {media}\n")
         return "ERROR"
 
     def get_info(self):
         return self.message or ""
 
     def command(self, command, arg):
+
+        """ PeelCapture has something for the ki pro to do """
 
         if command in ['set_data_directory', "takeNumber", "takeName", 'recording-ok']:
             return
@@ -328,36 +357,39 @@ class KiPro(PeelDeviceBase):
                 name = self.name + "_" + arg
             else:
                 name = arg
+
             if not self.clip_name(name):
-                print("Could not set clip name")
-                self.update_state("ERROR", "")
+                cmd.writeLog(str(self) + " - Could not set clip name\n")
+                self.update_state("ERROR", "Name Error")
                 return
+
             if not self.record():
-                print("Could not record")
-                self.update_state("ERROR", "")
+                cmd.writeLog(str(self) + " - Could not record\n")
+                self.update_state("ERROR", "Record Error")
                 return
-            self.update_state("RECORDING", "")
+
+            self.query_state_delayed()
             return
 
         if command == "stop":
             if self.stop():
-                self.update_state("ONLINE", "")
+                self.query_state_delayed()
             else:
-                print("Could not stop")
+                cmd.writeLog(str(self) + " - Could not stop\n")
                 self.update_state("ERROR", "")
             return
 
         if command == "play":
             if arg is None or len(arg) == 0:
-                if self.play():
-                    self.update_state("PLAYING", "")
+                self.play()
             else:
-                if self.play_clip(arg):
-                    self.update_state("PLAYING", "")
+                self.play_clip(arg)
+
+            self.query_state_delayed()
 
             return
 
-        print("KIPRO ignored the command:  " + str(command) + " " + str(arg))
+        cmd.writeLog(f"{self} - ignored the command: {command} {arg}\n")
 
     def call(self, **params):
         if self.downloading:
@@ -515,7 +547,7 @@ class KiPro(PeelDeviceBase):
         return True
 
     def harvest(self, directory, all_files):
-        return KiProDownloadThread(self, directory)
+        return KiProDownloadThread(self, directory, all_files)
 
     @staticmethod
     def dialog(settings):

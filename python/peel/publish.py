@@ -23,35 +23,15 @@
 # OR NOT THE LICENSOR WAS ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
 
 
-from PySide6 import QtWidgets, QtCore
-from  urllib import request
-import urllib.parse
-import urllib.error
-import shutil
-
-storage_url = "https://beta.peelcapture.com/do/api/storage"
-
-
-def gui():
-
-    data = urllib.parse.urlencode({'email': 'al@mocap.ca', 'password': 'mocap10'}).encode()
-
-    try:
-        req = request.urlopen(storage_url, data=data)
-        ret = req.read()
-        print(req.read())
-    except urllib.error.HTTPError as e:
-        if e.code == 403:
-            print("Invalid Login")
-        else:
-            print("Login error")
+import msvcrt
 
 
 def wrapshoot(file):
+    """ Called when a user selects "wrap shoot" from the file menu
+    @param file: the current peelcap file
+    """
+
+    pass
 
 
 
-
-
-if __name__ == "__main__":
-    gui()

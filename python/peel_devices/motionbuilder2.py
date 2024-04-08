@@ -47,9 +47,11 @@ class SocketThread(QtCore.QThread):
                 ret = self.socket.recvfrom(1024, 0)
             except IOError as e:
                 self.state_change.emit("OFFLINE")
+                print("offline")
                 return
 
             if not ret:
+                print(".")
                 continue
 
             if ret[0] == b'RECORDING\x00':

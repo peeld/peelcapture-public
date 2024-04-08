@@ -186,7 +186,7 @@ class HarvestDialog(QtWidgets.QDialog):
 
     def log_message(self, message):
         self.log.appendPlainText(message)
-        #print("> " + message)
+        cmd.writeLog(message + "\n")
 
     def is_done(self):
         return self.current_device >= len(self.selected_devices)

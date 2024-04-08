@@ -363,20 +363,26 @@ def movies(take=None):
         if not os.path.isdir(device_dir):
             continue
 
-        for f in os.listdir(device_dir):
-            if f.startswith("."):
-                continue
-
-            name, ext = os.path.splitext(f)
-            if ext.lower() not in ['.mpg', '.mp4', '.mov', '.avi']:
-                continue
-
-            if take is not None:
-                name_fixed = name.replace(".", "_").replace("-", "_")
-                if take not in name_fixed:
+        try:
+            for f in os.listdir(device_dir):
+                if f.startswith("."):
                     continue
 
-            movies.append(os.path.join(device_dir, f))
+                name, ext = os.path.splitext(f)
+                if ext.lower() not in ['.mpg', '.mp4', '.mov', '.avi']:
+                    continue
+
+                if take is not None:
+                    name_fixed = name.replace(".", "_").replace("-", "_")
+                    if take not in name_fixed:
+                        continue
+
+                movies.append(os.path.join(device_dir, f))
+
+        except Exception as e:
+            print("Error reading directory: " + str(device_dir) + " for device " + str(device))
+            print(str(e))
+
 
     return movies
 
