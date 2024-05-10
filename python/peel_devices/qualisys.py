@@ -159,7 +159,7 @@ class QualisysDevice(PeelDeviceBase):
         if state != qtm_rt.QRTEvent.EventConnected:
             await self.conn.new()
             try:
-                await self.conn.await_event(qtm_rt.QRTEvent.EventConnected, timeout=5)
+                await self.conn.await_event(qtm_rt.QRTEvent.EventConnected, timeout=10)
             except asyncio.TimeoutError:
                 self._update_state("ERROR", "Failed to start a new measurement on QTM")
                 return
@@ -170,7 +170,7 @@ class QualisysDevice(PeelDeviceBase):
         print("Start Measurement")
         await self.conn.start()
         try:
-            await self.conn.await_event(qtm_rt.QRTEvent.EventCaptureStarted, timeout=5)
+            await self.conn.await_event(qtm_rt.QRTEvent.EventCaptureStarted, timeout=10)
             self._update_state("RECORDING", None)  # Measurement is now recording
         except asyncio.TimeoutError:
             self._update_state("ERROR", "Failed to start measurement")
@@ -179,7 +179,7 @@ class QualisysDevice(PeelDeviceBase):
         print("Stop Measurement")
         await self.conn.stop()
         try:
-            await self.conn.await_event(qtm_rt.QRTEvent.EventCaptureStopped, timeout=5)
+            await self.conn.await_event(qtm_rt.QRTEvent.EventCaptureStopped, timeout=10)
             self._update_state("ONLINE", None)  # Measurement has stopped; device is online
         except asyncio.TimeoutError:
             self._update_state("ERROR", "Failed to stop measurement")
