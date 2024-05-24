@@ -16,12 +16,12 @@ class IClone(PeelDeviceBase):
         super(IClone, self).__init__(name)
         self.host = host
         self.port = 9212
-        self.udp = None
+        self.tcp = None
         self.state = "OFFLINE"
         self.info = None
         self.shot_name = None
         self.take_number = None
-        self.connect_udp()
+        self.connect_tcp()
 
     @staticmethod
     def device():
@@ -30,11 +30,11 @@ class IClone(PeelDeviceBase):
     def as_dict(self):
         return {'name': self.name, 'host': self.host}
 
-    def connect_udp(self):
-        self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.udp.settimeout(5.0)  # Set timeout for socket operations
+    def connect_tcp(self):
+        self.tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.tcp.settimeout(5.0)  # Set timeout for socket operations
         try:
-            self.udp.connect((self.host, self.port))
+            self.tcp.connect((self.host, self.port))
             self.state = "ONLINE"
         except socket.error as e:
             self.update_state("ERROR", f"Connection to {self.host} on port {self.port} failed: {e}")
@@ -44,9 +44,9 @@ class IClone(PeelDeviceBase):
         return self.name
 
     def teardown(self):
-        if self.udp:
-            self.udp.close()
-            self.udp = None
+        if self.tcp:
+            self.tcp.close()
+            self.tcp = None
 
     def get_state(self):
         return self.state
@@ -54,14 +54,14 @@ class IClone(PeelDeviceBase):
     def get_info(self):
         return self.info
 
-    def send_udp_command(self, command):
+    def send_tcp_command(self, command):
         try:
-            self.udp.sendto(command.encode('utf-8'), (self.host, self.port))
-            response, address = self.udp.recvfrom(4096)
+            self.tcp.sendall(command.encode('utf-8'))
+            response = self.tcp.recv(4096)
             print(f"{self.name} response to '{command}': {response.decode()}")
         except socket.timeout:
             self.state = "ERROR"
-            self.info = "UDP command timed out"
+            self.info = "TCP command timed out"
             print(f"{self.name} command '{command}' timed out")
         except Exception as e:
             self.state = "ERROR"
@@ -76,11 +76,11 @@ class IClone(PeelDeviceBase):
 
         if command == "record":
             self.state = "RECORDING"
-            self.send_udp_command("Record")
+            self.send_tcp_command("Record")
 
         elif command == "stop":
             self.state = "ONLINE"
-            self.send_udp_command("Stop")
+            self.send_tcp_command("Stop")
 
         elif command == "takeName":
             self.take_name = arg
@@ -114,4 +114,4 @@ class IClone(PeelDeviceBase):
     def reconfigure(self, name, host=None):
         self.name = name
         self.host = host
-        self.connect_udp()
+        self.connect_tcp()
