@@ -11,17 +11,17 @@ class ICloneWidget(SimpleDeviceWidget):
         msg = '<P><A HREF="' + link + '">Documentation</A></P>\nIClone listens on port 9212.'
         self.set_info(msg)
 
+
 class IClone(PeelDeviceBase):
-    def __init__(self, name="IClone", host=None):
+    def __init__(self, name="IClone"):
         super(IClone, self).__init__(name)
-        self.host = host
+        self.host = "127.0.0.1"
         self.port = 9212
         self.tcp = None
         self.state = "OFFLINE"
         self.info = None
         self.shot_name = None
         self.take_number = None
-        self.connect_tcp()
 
     @staticmethod
     def device():
@@ -30,7 +30,11 @@ class IClone(PeelDeviceBase):
     def as_dict(self):
         return {'name': self.name, 'host': self.host}
 
-    def connect_tcp(self):
+    def reconfigure(self, name, host=None):
+        self.name = name
+        self.host = host
+
+    def connect_device(self):
         self.tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.tcp.settimeout(5.0)  # Set timeout for socket operations
         try:
@@ -92,26 +96,6 @@ class IClone(PeelDeviceBase):
             self.take_number = arg
 
     @staticmethod
-    def dialog(settings):
-        return ICloneWidget(settings)
+    def dialog_class():
+        return ICloneWidget
 
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-        return IClone(widget.name.text(), widget.host.text())
-
-    def edit(self, settings):
-        dlg = ICloneWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
-
-    def reconfigure(self, name, host=None):
-        self.name = name
-        self.host = host
-        self.connect_tcp()
