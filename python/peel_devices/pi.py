@@ -27,6 +27,12 @@ from peel_devices import TcpDevice, SimpleDeviceWidget
 from PeelApp import cmd
 
 
+class PiWidget(SimpleDeviceWidget):
+    def __init__(self, settings):
+        super().__init__(settings, "Pi Slate", has_host=True, has_port=True,
+                         has_broadcast=False, has_listen_ip=False, has_listen_port=False)
+
+
 class Pi(TcpDevice):
 
     """ This device tests device functionality by running a thread when the device is in record mode
@@ -34,8 +40,10 @@ class Pi(TcpDevice):
     The thread and the device will both output some text to the log.
     """
 
-    def __init__(self, name, host, port):
-        super(Pi, self).__init__(name, host, port)
+    def __init__(self, name="PiSlate"):
+        super(Pi, self).__init__(name)
+        self.host = "192.168.1.100"
+        self.port = 8890
 
     @staticmethod
     def device():
@@ -52,36 +60,9 @@ class Pi(TcpDevice):
         if command == "stop":
             self.send("STOP " + str(argument))
 
-
     @staticmethod
-    def dialog(settings):
-        widget = SimpleDeviceWidget(settings, "Pi Slate", has_host=True, has_port=True,
-                                    has_broadcast=False, has_listen_ip=False, has_listen_port=False)
-        if widget.port.text() == "":
-            widget.port.setText("8890")
-        return widget
-
-    @staticmethod
-    def dialog_callback(widget):
-
-        if not widget.do_add():
-            return
-
-        ret = Pi("", "", 0)
-        if widget.update_device(ret):
-            return ret
-
-    def edit(self, settings):
-        dlg = SimpleDeviceWidget(settings, "Pi", has_host=True, has_port=True,
-                                 has_broadcast=False, has_listen_ip=False, has_listen_port=False)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-
-        widget.update_device(self)
+    def dialog_class():
+        return SimpleDeviceWidget
 
     def has_harvest(self):
         return False

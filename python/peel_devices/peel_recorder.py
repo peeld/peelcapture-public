@@ -38,7 +38,7 @@ class SocketThread(QtCore.QThread):
 
     state_change = QtCore.Signal()
 
-    def __init__(self, host, port=9005):
+    def __init__(self):
         super(SocketThread, self).__init__()
         self.host = None
         self.port = None
@@ -48,12 +48,6 @@ class SocketThread(QtCore.QThread):
         self.socket = None
         self.active_flag = False
         self.recording_flag = False
-
-        print(f"Socket Thread {host} {port}")
-
-        if host and port:
-            print("Starting TCP by constructor")
-            self.tcp_start(host, port)
 
     def __str__(self):
         if self.active_flag:
@@ -224,6 +218,12 @@ class SocketThread(QtCore.QThread):
         return True
 
 
+class PeelRecorderWidget(SimpleDeviceWidget):
+    def __init__(self, settings):
+        super().__init__(settings, "PeelRecorder", has_host=True, has_port=True,
+                         has_broadcast=False, has_listen_ip=False, has_listen_port=False)
+
+
 class PeelRecorder(PeelDeviceBase):
 
     """ This device tests device functionality by running a thread when the device is in record mode
@@ -231,11 +231,11 @@ class PeelRecorder(PeelDeviceBase):
     The thread and the device will both output some text to the log.
     """
 
-    def __init__(self, name, host, port):
+    def __init__(self, name="PeelRecorder"):
         super(PeelRecorder, self).__init__(name)
-        print(f"Peel Recorder Init {name}  host: {host}  port: {port}")
-        self.tcp = SocketThread(host, port)
-        self.tcp.state_change.connect(self.thread_state_change)
+        self.tcp = None
+        self.host = "127.0.0.1"
+        self.port = 9005
 
     @staticmethod
     def device():
@@ -243,10 +243,27 @@ class PeelRecorder(PeelDeviceBase):
             Used to populate the add-device dropdown dialog and to serialize the class/type """
         return "peelrecorder"
 
-    def reconfigure(self, name="PeelRecorder", host="", port=""):
-        print(f"Reconfigure {host} {port}")
+    def reconfigure(self, name, **kwargs):
         self.name = name
-        self.tcp.tcp_start(host, port)
+        self.host = kwargs.get("host")
+        self.port = kwargs.get("port")
+
+    def connect_device(self):
+        self.teardown()
+
+        if self.tcp is None:
+            self.tcp = SocketThread()
+            self.tcp.state_change.connect(self.thread_state_change)
+
+        self.tcp.tcp_start(self.host, self.port)
+
+    def teardown(self):
+        """ Shutdown gracefully """
+
+        if self.tcp:
+            self.tcp.tcp_disconnect()
+            self.tcp.stop_thread()
+            self.tcp = None
 
     def as_dict(self):
         """ Return the parameters to the constructor as a dict, to be saved in the peelcap file """
@@ -291,51 +308,14 @@ class PeelRecorder(PeelDeviceBase):
         if command == "stop":
             self.tcp.send(0x8002, argument)
 
-    def teardown(self):
-        """ Device is being deleted, shutdown gracefully """
-        self.tcp.tcp_disconnect()
-        self.tcp.stop_thread()
-
     def thread_join(self):
         """ Called when the main app is shutting down - block till the thread is finished """
         if self.tcp:
             self.tcp.wait(10)
 
     @staticmethod
-    def dialog(settings):
-        """ Return a edit widget to be used in the Add Dialog ui """
-        dlg = SimpleDeviceWidget(settings, "PeelRecorder", has_host=True, has_port=True,
-                                  has_broadcast=False, has_listen_ip=False, has_listen_port=False)
-        if dlg.port.text() == "":
-            dlg.port.setText("9005")
-        return dlg
-
-    @staticmethod
-    def dialog_callback(widget):
-        """ Callback for dialog() widget - called when dialog has been accepted """
-        if not widget.do_add():
-            return
-
-        device = PeelRecorder("", "", 0)
-        widget.update_device(device)
-        return device
-
-    def edit(self, settings):
-        """ Return a widget to be used in the Add Dialog ui, when editing the device """
-        dlg = SimpleDeviceWidget(settings, "PeelRecorder", has_host=True, has_port=True,
-                                 has_broadcast=False, has_listen_ip=False, has_listen_port=False)
-
-        dlg.name.setText(self.name)
-        dlg.host.setText(self.tcp.host)
-        dlg.port.setText(str(self.tcp.port))
-        return dlg
-
-    def edit_callback(self, widget):
-        """ Callback for edit() widget - called when dialog has been accepted """
-        if not widget.do_add():
-            return
-
-        widget.update_device(self)
+    def dialog_class():
+        return PeelRecorderWidget
 
     def has_harvest(self):
         """ Return true if harvesting (collecting files form the device) is supported """

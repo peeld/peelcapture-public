@@ -186,13 +186,11 @@ class ListenThread(QtCore.QThread):
 
 
 class Blade(PeelDeviceBase):
-    def __init__(self,
-                 name,
-                 listen_ip,
-                 blade_host,
-                 broadcast_port=8811,
-                 listen_port=8026,
-                 delay=0.0):
+    @staticmethod
+    def device():
+        return "blade"
+
+    def __init__(self, name="Blade"):
 
         """ To connect to blade we must open up a port to listen on, then send
             a broadcast udp packet to tell blade to connect to our service.  Why
@@ -204,11 +202,11 @@ class Blade(PeelDeviceBase):
             """
 
         super(Blade, self).__init__(name)
-        self.listen_ip = listen_ip
-        self.blade_host = blade_host
-        self.broadcast_port = broadcast_port
-        self.listen_port = listen_port
-        self.delay = delay
+        self.listen_ip = "127.0.0.1"
+        self.blade_host = "127.0.0.1"
+        self.broadcast_port = 8811
+        self.listen_port = 8026
+        self.delay = 0.0
 
         self.record_timer = QtCore.QTimer()
         self.record_timer.setInterval(True)
@@ -223,14 +221,11 @@ class Blade(PeelDeviceBase):
         self.take_name = ""
         self.error = None
 
-        self.reconfigure(name=name, listen_ip=listen_ip, blade_host=blade_host,
-                         broadcast_port=broadcast_port, listen_port=listen_port,
-                         delay=delay)
-        # self.connect()
-
-    @staticmethod
-    def device():
-        return "blade"
+    def __str__(self):
+        if self.listener:
+            return self.name + " - Connections: " + str(len(self.listener.sockets))
+        else:
+            return self.name
 
     def as_dict(self):
         return {'name': self.name,
@@ -253,6 +248,8 @@ class Blade(PeelDeviceBase):
         self.take_name = ""
         self.error = None
 
+    def connect_device(self):
+
         if self.listener:
             self.listener.stop()
             self.listener.wait()
@@ -265,13 +262,17 @@ class Blade(PeelDeviceBase):
 
         self.update_state()
 
-    def __str__(self):
-        return self.name + " - Connections: " + str(len(self.listener.sockets))
+    def teardown(self):
+        self.udp.close()
+        self.listener.stop()
+        self.listener.wait()
 
     def get_state(self):
         if self.error is not None:
             return "ERROR"
         if not self.enabled:
+            return "OFFLINE"
+        if self.listener is None:
             return "OFFLINE"
         if len(self.listener.sockets) == 0:
             self.connect_blade()
@@ -279,11 +280,6 @@ class Blade(PeelDeviceBase):
         if self.recording:
             return "RECORDING"
         return "ONLINE"
-
-    def teardown(self):
-        self.udp.close()
-        self.listener.stop()
-        self.listener.wait()
 
     def thread_join(self):
         self.listener.wait()
@@ -341,24 +337,15 @@ class Blade(PeelDeviceBase):
             self.error = str(e)
             self.update_state("ERROR", str(e))
 
-
     @staticmethod
-    def dialog(settings):
-        return AddWidget(settings)
+    def dialog_class():
+        return AddWidget
 
-    @staticmethod
-    def dialog_callback(widget):
-
-        if not widget.do_add():
-            return
-
-        ret = Blade("Blade", widget.listen_interface(), widget.host(), delay=widget.delay())
-
-        msg = "client on -port %d;" % ret.broadcast_port
+    def device_added(self, widget):
+        msg = "client on -port %d;" % self.broadcast_port
         QtWidgets.QMessageBox.information(widget, "Blade", "Run this in blade: " + msg)
         QtGui.QGuiApplication.clipboard().setText(msg)
 
-        return ret
 
     def edit(self, settings):
 

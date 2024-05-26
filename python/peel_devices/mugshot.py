@@ -28,6 +28,7 @@ import time, os
 from requests.exceptions import ConnectionError, HTTPError
 from collections import deque
 
+
 class MugshotWidget(SimpleDeviceWidget):
     def __init__(self, settings):
         super(MugshotWidget, self).__init__(settings, "Mugshot", has_host=True, has_port=False,
@@ -36,13 +37,14 @@ class MugshotWidget(SimpleDeviceWidget):
         url = "https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-mugshot/"
         self.info_text = "Technoprops HMC Software, Mugshot.  <A HREF=\"" + url + "\">Documentation</A>"
 
+
 class Mugshot(PeelDeviceBase):
-    def __init__(self, name=None, host=None):
+    def __init__(self, name="Mugshot"):
         super(Mugshot, self).__init__(name)
-        self.host = host
+        self.host = "192.168.1.100"
         self.state = "OFFLINE"
-        self.info = None
-        self._update_state("OFFLINE", None)
+        self.info = ""
+        self._update_state("OFFLINE", "")
         self.check_connection()
 
     def as_dict(self):
@@ -51,7 +53,9 @@ class Mugshot(PeelDeviceBase):
     def reconfigure(self, name, **kwargs):
         self.name = name
         self.host = kwargs.get('host', self.host)
-        self._update_state("OFFLINE", None)
+        self._update_state("OFFLINE", "")
+
+    def connect_device(self):
         self.check_connection()
 
     def get_state(self):
@@ -136,26 +140,8 @@ class Mugshot(PeelDeviceBase):
         return "mugshot"
 
     @staticmethod
-    def dialog(settings):
-        return MugshotWidget(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-        ret = Mugshot(name=widget.name, host=widget.host)  # Adjusted for the correct instantiation
-        if widget.update_device(ret):
-            return ret
-
-    def edit(self, settings):
-        dlg = MugshotWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
+    def dialog_class():
+        return MugshotWidget
 
     def has_harvest(self):
         return True

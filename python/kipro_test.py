@@ -1,7 +1,8 @@
-import urllib.parse, urllib.request
-
+import urllib.parse
+import urllib.request
+import re
 # https://gitlab.aja.com/pub/rest_api/-/blob/52578781dbf8207689ea71df3753b9801334d695/KiPro-GO/04_Ki-Pro-GO_Commands.md
-host = "192.168.1.51"
+host = "192.168.1.193"
 
 def call(**params):
 
@@ -19,7 +20,29 @@ def call(**params):
 #ret = call(paramid='eParamID_MediaState', value=1, action="set")
 #print(ret)
 
-f = urllib.request.urlopen("http://" + host + "/clips", timeout=1)
-s = f.read().decode("ascii")
+def clips(host):
+    f = urllib.request.urlopen("http://" + host + "/clips", timeout=1)
+    s = f.read().decode("ascii")
 
-print(s)
+    for clip in re.findall(r"\{[^\)]+?\}", s):
+
+        ret = re.match("{(.*)}", clip)
+        if not ret:
+            continue
+
+        clip = ret.group(1).strip()
+
+        d = {}
+
+        for i in re.findall(r'.*?: "[^"]*",\s+', clip + ","):
+            p = i.find(':')
+            k = i[:p].strip()
+            v = i[p + 1:].strip()[1:-2]
+            if k and v:
+                d[k] = v
+
+        yield d
+
+
+
+print(clips(host))

@@ -145,6 +145,12 @@ class Runner(threading.Thread):
         return "error"
 
 
+class StubWidget(SimpleDeviceWidget):
+    def __init__(self, settings):
+        super().__init__(settings, "Stub", has_host=False, has_port=False,
+                         has_broadcast=False, has_listen_ip=False, has_listen_port=False)
+
+
 class Stub(PeelDeviceBase):
 
     """ This device tests device functionality by running a thread when the device is in record mode
@@ -152,7 +158,7 @@ class Stub(PeelDeviceBase):
     The thread and the device will both output some text to the log.
     """
 
-    def __init__(self, name):
+    def __init__(self, name="Stub"):
         super(Stub, self).__init__(name)
         self.thread = None
         self.takes = []
@@ -166,6 +172,14 @@ class Stub(PeelDeviceBase):
     def as_dict(self):
         """ Return the paramters to the constructor as a dict, to be saved in the peelcap file """
         return {'name': self.name}
+
+    def reconfigure(self, name, **kwargs):
+        """ Change the settings in the device. """
+        self.name = name
+
+    def device_connect(self):
+        """ Initialize the device"""
+        pass
 
     def __str__(self):
         if self.thread is None:
@@ -234,32 +248,8 @@ class Stub(PeelDeviceBase):
             self.thread.join()
 
     @staticmethod
-    def dialog(settings):
-        """ Return a edit widget to be used in the Add Dialog ui """
-        return SimpleDeviceWidget(settings, "Stub", has_host=False, has_port=False,
-                                  has_broadcast=False, has_listen_ip=False, has_listen_port=False)
-
-    @staticmethod
-    def dialog_callback(widget):
-        """ Callback for dialog() widget - called when dialog has been accepted """
-        if not widget.do_add():
-            return
-
-        return Stub(widget.name.text())
-
-    def edit(self, settings):
-        """ Return a widget to be used in the Add Dialog ui, when editing the device """
-        dlg = SimpleDeviceWidget(settings, "Stub", has_host=False, has_port=False,
-                                 has_broadcast=False, has_listen_ip=False, has_listen_port=False)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        """ Callback for edit() widget - called when dialog has been accepted """
-        if not widget.do_add():
-            return
-
-        widget.update_device(self)
+    def dialog_class():
+        return StubWidget
 
     def has_harvest(self):
         """ Return true if harvesting (collecting files form the device) is supported """
@@ -268,10 +258,6 @@ class Stub(PeelDeviceBase):
     def harvest(self, directory, all_files):
         """ Copy all the take files from the device to directory """
         return StubDownloadThread(self, directory)
-
-    def reconfigure(self, name, **kwargs):
-        """ Change the settings in the device. """
-        self.name = name
 
     def list_takes(self):
         return self.takes

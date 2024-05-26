@@ -40,10 +40,10 @@ class XSensWidget(SimpleDeviceWidget):
 
 class XSens(XmlUdpDeviceBase):
 
-    def __init__(self, name=None, host=None, port="6004", broadcast=None, listen_ip=None, listen_port=None,
-                 set_capture_folder=False):
-        super().__init__(name, host, port, broadcast, listen_ip, listen_port, fmt="XSENS",
-                         set_capture_folder=set_capture_folder)
+    def __init__(self, name="XSens"):
+        super().__init__(name)
+        self.port = 6004
+        self.fmt = "XSENS"
 
     def as_dict(self):
         return {'name': self.name,
@@ -58,30 +58,9 @@ class XSens(XmlUdpDeviceBase):
         return "xsens"
 
     @staticmethod
-    def dialog(settings):
-        return XSensWidget(settings)
+    def dialog_class():
+        return XSensWidget
 
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            print("didnt add")
-            return
-        ret = XSens()
-        if widget.update_device(ret):
-            return ret
-
-        print("didnt update")
-
-    def edit(self, settings):
-
-        dlg = XSensWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        return widget.update_device(self)
 
 
 

@@ -39,23 +39,5 @@ class StretchSense(XmlUdpDeviceBase):
         return "stretchsense"
 
     @staticmethod
-    def dialog(settings):
-        return AddXmlUdpWidget(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-        ret = StretchSense()
-        if widget.update_device(ret):
-            return ret
-
-    def edit(self, settings):
-        dlg = AddXmlUdpWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
+    def dialog_class():
+        return AddXmlUdpWidget

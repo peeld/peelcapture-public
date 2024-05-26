@@ -40,10 +40,10 @@ class AvataryWidget(SimpleDeviceWidget):
 
 class Avatary(XmlUdpDeviceBase):
 
-    def __init__(self, name=None, host=None, port="6004", broadcast=None, listen_ip=None, listen_port=None,
-                 set_capture_folder=False):
-        super().__init__(name, host, port, broadcast, listen_ip, listen_port, fmt=None,
-                         set_capture_folder=set_capture_folder)
+    def __init__(self, name="Avatary",):
+        super().__init__(name)
+
+        self.port = 6004
 
     def as_dict(self):
         return {'name': self.name,
@@ -51,34 +51,16 @@ class Avatary(XmlUdpDeviceBase):
                 'port': self.port,
                 'broadcast': self.broadcast,
                 'listen_ip': self.listen_ip,
-                'listen_port': self.listen_port }
+                'listen_port': self.listen_port}
 
     @staticmethod
     def device():
         return "avatary"
 
     @staticmethod
-    def dialog(settings):
-        return AvataryWidget(settings)
+    def dialog_class():
+        return AvataryWidget
 
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-        ret = Avatary()
-        if widget.update_device(ret):
-            return ret
-
-    def edit(self, settings):
-
-        dlg = AvataryWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
 
 
 

@@ -56,7 +56,21 @@ class BaseDeviceWidget(QtWidgets.QWidget):
     def reset_timer(self):
         self.click_flag = False
 
+    def populate_from_device(self, device):
+        """ Populate the values in this ui from information in the device class. """
+        raise NotImplementedError
+
+    def update_device(self, device):
+        """ Update the device with values in this dialog. Should not modify the state of device,
+            reconfigure() and connect_device() will be called after """
+        raise NotImplementedError
+
     def do_add(self):
+        """ Called when adding a new device to validate the parameters before adding.  Should
+        return true if the parameters are valid and false if they are not to stop the device
+        being added and the dialog closing.  Default action has a double click check as this
+        appears to happen often, even with a single click. """
+
         # Prevent double clicking creating two devices
         if self.click_flag:
             return False
@@ -138,7 +152,7 @@ class SimpleDeviceWidget(BaseDeviceWidget):
         if self.listen_port is not None:
             self.listen_port.setText(str(device.listen_port))
         if self.set_capture_folder is not None:
-            self.set_capture_folder.setChecked(device.set_capture_folder is True)
+            self.set_capture_folder.setChecked(bool(device.set_capture_folder))
 
     def update_device(self, device, data=None):
 
@@ -179,6 +193,8 @@ class SimpleDeviceWidget(BaseDeviceWidget):
         if self.set_capture_folder is not None:
             data['set_capture_folder'] = self.set_capture_folder.isChecked()
 
+        cmd.writeLog("UpdateDevice:")
+        cmd.writeLog(str(data))
         device.reconfigure(name, **data)
         return True
 
@@ -201,7 +217,7 @@ class SimpleDeviceWidget(BaseDeviceWidget):
         if self.listen_port is not None:
             self.settings.setValue(self.title + "ListenPort", self.listen_port.text())
         if self.set_capture_folder is not None:
-            self.settings.setValue(self.title + "SetCaptureFolder", self.set_capture_folder.isChecked())
+            self.settings.setValue(self.title + "SetCaptureFolder", str(self.set_capture_folder.isChecked()))
 
         return True
 
@@ -211,10 +227,56 @@ class PeelDeviceBase(QtCore.QObject):
     """ Base class for all devices """
 
     def __init__(self, name, parent=None):
+
+        """ (v1.37) Class constructors should only populate the unique name for the device and the
+        default values for the variables needed by the ui.  The constructor does not take any arguments in it
+        just sets the default values.  The device values are populated by "reconfigure".
+
+        The order of operations for when a device is loaded from disk:
+        ( see peel_devices\__init__.py DeviceCollection::load_json )
+         - __init__(name=SavedDeviceName)
+         - device_id = (registered id)
+         - reconfigure(**data)
+         - connect_device()
+        peel\__init__.py load_data, for all devices
+         - cmd.setDevices( ... ) - main application is given the device references for all devices
+                                 - this will trigger a state request
+
+        The order of operations when a new device is added by the user:
+        ( see peel\__init__.py )
+        AddDeviceDialog::device_select
+         - widget = device.dialog_class()()
+         - __init__()
+         - widget.populate_from_device( ... ) - gets default values from device constructor
+         - (user clicks "Add")
+        AddDeviceDialog::do_add
+         - __init__()
+         - widget.update_device( ... )
+         - device_id = (registered device id)
+         - cmd.setDevice( ... ) - main appliation is given the device refernce
+         - get_state() - main application get ths state/info of the device
+         - connect_device()
+         - device_added()
+
+        The order of operations when a device is edited (double clicked in the main app):
+        ( see peel\__init__.py - device_info() )
+         - widget = device.dialog_class()()
+         - widget.populate_from_device(...)
+         - (user clicks button)
+         - widget.update_device(...)
+         - cmd.updateDevice(...) - updates the main ui, will trigger a status request
+         - connect_device()
+         - device_added()
+
+        Note that cmd.setDevice(...) needs to be called before calling connect_device() so if there
+        are any status updates while connecting the main ui will understand them.
+
+
+        """
         super(PeelDeviceBase, self).__init__(parent)
         self.name = name
-        self.device_id = None
-        self.plugin_id = -1
+        self.device_id = None  # set by DeviceCollection::add_device()
+        self.plugin_id = -1    # reference to a dll plugin created by cmd.createDevice(...)
         self.enabled = True
 
     def __str__(self):
@@ -230,18 +292,21 @@ class PeelDeviceBase(QtCore.QObject):
         raise NotImplementedError
 
     def as_dict(self):
-        """ Returns the constructor fields and values for this instance.  Used to
+        """ Returns the fields and values for this instance.  Used by reconfigure
             recreate the instance between application sessions """
         raise NotImplementedError
 
     def reconfigure(self, name, **kwargs):
-        """ Called by the SimpleDevice dialog to set the device settings.  Does not
+        """ Called to set the device settings.  Does not
             need to be overridden if a different dialog is being used.
             The kwargs need to match the parameters specified in SimpleDeviceWidget
             constructor, ie if has_host is True, kwargs will have a "host" parameter.
-
-             """
+        """
         raise NotImplementedError
+
+    def connect_device(self):
+        """ Initiates the connection to the device.  Called by the application.
+        """
 
     def teardown(self):
         """ Called when the app is shutting down - tell all threads to stop and return """
@@ -338,22 +403,13 @@ class PeelDeviceBase(QtCore.QObject):
         cmd.updateDevice(self.device_ref(state, info))
 
     @staticmethod
-    def dialog(settings):
-        """ Static method to create the UI for this device.  It should return
-            an blank instance of this device type.
-        """
+    def dialog_class():
+        """ Return the widget class (the class, not an instance) """
         raise NotImplementedError
 
-    @staticmethod
-    def dialog_callback(widget):
-        """ Static method to populate the device from the creation widget """
-        raise NotImplementedError
-
-    def edit(self, settings):
-        """ Create the UI to edit this device.  It should return an populated
-            instance of this device object.
-        """
-        raise NotImplementedError
+    def device_added(self, widget):
+        """ Called after a device has been successfully added or edited """
+        pass
 
     def has_harvest(self):
         """ Return True if the device supports the ability to download files from
@@ -488,28 +544,41 @@ class DeviceCollection(QtCore.QObject):
 
         klass = dict([(i.device(), i) for i in self.all_classes()])
         if "devices" in data:
-            for name, device_data in data["devices"]:
+            for class_name, device_data in data["devices"]:
 
                 if not isinstance(device_data, dict):
                     print("Not a dict while reading device data:" + str(device_data))
                     error = True
                     continue
 
-                if name not in klass:
+                if class_name not in klass:
                     print("Could not find device class for: " + name)
                     error = True
                     continue
 
-                if mode == "merge" and self.has_device(name, device_data["name"]):
+                if 'name' not in device_data:
+                    print("Device is not named: " + str(class_name))
+                    error = True
+                    continue
+
+                if mode == "merge" and self.has_device(class_name, device_data["name"]):
                     error = True
                     continue
 
                 try:
+                    print("Device: " + str(class_name))
+                    device = klass[class_name](name=device_data['name'])
+                    print("Adding")
+                    self.add_device(device)  # Adds to self.device only
+                    print("Configure")
                     print(device_data)
-                    d = klass[name](**device_data)
-                    self.add_device(d)
+                    device.reconfigure(**device_data)
+                    print("Connecting")
+                    device.connect_device()
+                    print("Done")
+
                 except TypeError as e:
-                    print("Error recreating class: " + str(name))
+                    print("Error recreating class: " + str(class_name))
                     print(str(e))
                     print(str(device_data))
                     error = True
@@ -522,26 +591,21 @@ class DeviceCollection(QtCore.QObject):
 
 class TcpDevice(PeelDeviceBase):
 
-    def __init__(self, name=None, host=None, port=None):
+    def __init__(self, name):
         super(TcpDevice, self).__init__(name)
-        self.host = host
-        self.port = port
-        self.tcp = QTcpSocket()
-        self.tcp.connected.connect(self.do_connected)
-        self.tcp.disconnected.connect(self.do_disconnected)
-        self.tcp.readyRead.connect(self.do_read)
-        self.tcp.errorOccurred.connect(self.do_error)
+        self.host = None
+        self.port = None
+        self.tcp = None
         self.current_take = None
         self.error = None
         self.connected_state = None  # ONLINE, OFFLINE, ERROR
         self.device_state = None  # ONLINE, PLAYING, RECORDING
         self.info = None
 
-        self.reconfigure(name=name, host=host, port=port)
-
     def send(self, msg):
         #if self.connected_state != "CONNECTED":
         #    self.tcp.connectToHost(self.host, self.port)
+        print(msg)
         self.tcp.write(msg.encode("utf8"))
 
     def do_read(self):
@@ -613,29 +677,34 @@ class TcpDevice(PeelDeviceBase):
                 'host': self.host,
                 'port': self.port}
 
-    def reconfigure(self, name, host=None, port=None):
-
-        print(f"Reconfigure {host} {port}  {self.host} {self.port}")
-
+    def teardown(self):
         if self.tcp is not None:
             if self.connected_state == "CONNECTED":
                 self.tcp.disconnectFromHost()
             self.tcp.close()
+            self.tcp = None
 
-        if host is not None:
-            self.host = host
+    def reconfigure(self, name, **kwargs):
 
-        if port is not None:
-            self.port = port
+        self.teardown()
+
+        self.host = kwargs.get('host')
+        self.port = kwargs.get('port')
 
         self.current_take = None
         self.error = None
         self.connected_state = None
         self.name = name
 
-        if self.host is not None and self.port is not None:
-            print(f"Connecting to {self.host} {self.port}")
-            self.tcp.connectToHost(self.host, self.port)
+    def connect_device(self):
+
+        print(f"TCP Connecting to {self.host} {self.port}")
+        self.tcp = QTcpSocket()
+        self.tcp.connected.connect(self.do_connected)
+        self.tcp.disconnected.connect(self.do_disconnected)
+        self.tcp.readyRead.connect(self.do_read)
+        self.tcp.errorOccurred.connect(self.do_error)
+        self.tcp.connectToHost(self.host, self.port)
 
         self.update_state()
 
@@ -659,12 +728,6 @@ class TcpDevice(PeelDeviceBase):
         if self.error is not None:
             return self.error
         return ""
-
-    def teardown(self):
-        if self.tcp is not None:
-            self.tcp.close()
-            self.tcp = None
-
 
 
 class FileItem(object):

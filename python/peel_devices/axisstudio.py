@@ -13,19 +13,16 @@ class AxisStudioWidget(SimpleDeviceWidget):
 
 class AxisStudio(PeelDeviceBase):
 
-    def __init__(self, name="AxisStudio", host=None, port=None):
+    def __init__(self, name="AxisStudio"):
         super(AxisStudio, self).__init__(name)
         self.device_state = "ONLINE"
         self.info = ""
         self.name = name
-        self.host = host
-        self.port = port
+        self.host = "127.0.0.1"
+        self.port = 0
         self.plugin_id = cmd.createDevice("AxisStudio")
         if self.plugin_id == -1:
             raise RuntimeError("Could not create plugin device")
-        if host and port:
-            cmd.configureDevice(self.plugin_id, f"{self.host}:{self.port}")
-            # cmd.setDeviceEnabled(self.plugin_id, self.enabled)
 
     def set_enabled(self, value):
         super().set_enabled(value)
@@ -47,6 +44,9 @@ class AxisStudio(PeelDeviceBase):
         cmd.configureDevice(self.plugin_id, f"{self.host}:{self.port}")
         # cmd.setDeviceEnabled(self.plugin_id, self.enabled)
 
+    def connect_device(self):
+        pass
+
     def teardown(self):
         cmd.deleteDevice(self.plugin_id)
 
@@ -66,27 +66,8 @@ class AxisStudio(PeelDeviceBase):
         return ""
 
     @staticmethod
-    def dialog(settings):
-        return AxisStudioWidget(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-
-        ret = AxisStudio()
-        if widget.update_device(ret):
-            return ret
-
-    def edit(self, settings):
-        dlg = AxisStudioWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
+    def dialog_class():
+        return AxisStudioWidget
 
     def has_harvest(self):
         return False

@@ -120,24 +120,16 @@ class ObsDeviceDialog(BaseDeviceWidget):
 
 class ObsDevice(PeelDeviceBase):
 
-    def __init__(self, name=None, host=None, port=None, password=None, set_folder=None):
+    def __init__(self, name="Obs"):
         super(ObsDevice, self).__init__(name)
-        self.host = None
-        self.port = None
+        self.host = "127.0.0.1"
+        self.port = 4444
         self.password = None
         self.conn = None
         self.info = ""
         self.state = "OFFLINE"
         self.last_command = None
         self.set_folder = None
-
-        #log = logging.getLogger()
-        #log.setLevel(logging.DEBUG)
-        #log.addHandler(logging.StreamHandler(sys.stdout))
-        #logging.getLogger("asyncio").setLevel(logging.WARNING)
-
-        if host is not None and port is not None:
-            self.reconfigure(name, host=host, port=port, password=password, set_folder=set_folder)
 
     def reconfigure(self, name, **kwargs):
         self.name = name
@@ -146,16 +138,14 @@ class ObsDevice(PeelDeviceBase):
         self.password = kwargs['password']
         self.set_folder = kwargs['set_folder']
         self.state = "OFFLINE"
-        if self.conn is not None:
-            self.conn.loop.run_until_complete(self.conn.disconnect())
-        self.connect_obs()
 
     def teardown(self):
         if self.conn is not None:
             self.conn.loop.run_until_complete(self.conn.disconnect())
 
-    def connect_obs(self):
+    def connect_device(self):
         """ Create the obj object and do the async call """
+        self.teardown()
         try:
             url = f'ws://{self.host}:{self.port}'
             print(f"Connecting to obs: {url}")
@@ -169,7 +159,7 @@ class ObsDevice(PeelDeviceBase):
             return False
 
         try:
-            self.conn.loop.run_until_complete(self.connect())
+            self.conn.loop.run_until_complete(self.connect_async())
         except simpleobsws.NotIdentifiedError as e:
             self.info = "Could not connect"
             self.state = "OFFLINE"
@@ -177,7 +167,7 @@ class ObsDevice(PeelDeviceBase):
 
         return True
 
-    async def connect(self):
+    async def connect_async(self):
         """ async connect"""
         try:
             await self.conn.connect()
@@ -268,14 +258,14 @@ class ObsDevice(PeelDeviceBase):
         print("OBS SEND CMD: " + str(cmd) + " DATA:" + str(data))
         if self.conn is None:
             print("OBS Connecting")
-            self.connect_obs()
+            self.connect_device()
         if self.conn is None:
             print("OBS Could not connect")
             return
 
         if not self.conn.identified:
             print("OBS not identified")
-            self.connect_obs()
+            self.connect_device()
             return
 
         self.conn.loop.run_until_complete(self.cmd_sender(cmd, data))
@@ -297,26 +287,7 @@ class ObsDevice(PeelDeviceBase):
             self.send("StopRecord")
 
     @staticmethod
-    def dialog(settings):
-        return ObsDeviceDialog(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-
-        device = ObsDevice()
-        if widget.update_device(device):
-            return device
-
-    def edit(self, settings):
-        dlg = ObsDeviceDialog(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
+    def dialog_class():
+        return ObsDeviceDialog
 
 

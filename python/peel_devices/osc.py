@@ -122,35 +122,27 @@ class OscListenThreadUnreal(OscListenThread):
 
 
 class Osc(peel_devices.PeelDeviceBase):
-    def __init__(self, listen_class, name=None, host=None, port=None, broadcast=None, listen_ip=None,
-                 listen_port=None, parent=None):
-        super(Osc, self).__init__(name, parent)
+    def __init__(self, listen_class, name):
+        super(Osc, self).__init__(name)
 
         self.listen_class = listen_class
 
         # reconfigure sets these
-        self.host = host
-        self.port = port
-        self.broadcast = broadcast
-        self.listen_ip = listen_ip
-        self.listen_port = listen_port
+        self.host = "127.0.0.1"
+        self.port = 0
+        self.broadcast = False
+        self.listen_ip = "0.0.0.0"
+        self.listen_port = 0
 
         self.slate = ""
         self.take = ""
         self.desc = ""
         self.listen_thread = None
 
-        print("OSC Host: %s   Port: %s" % (str(host), str(port)))
-
         self.state = "ONLINE"
         self.is_recording = False
 
         self.client = None
-
-        self.reconfigure(name, host=host, port=port, broadcast=broadcast,
-                         listen_ip=listen_ip, listen_port=listen_port)
-
-        #client_send("/RecordStart", ["slate", "take1", "my desc"] )
 
     @staticmethod
     def device():
@@ -182,6 +174,19 @@ class Osc(peel_devices.PeelDeviceBase):
         print("OSC Reconfigure: ", name, self.host, self.port, self.broadcast,
               self.listen_ip, self.listen_port)
 
+    def teardown(self):
+        if self.client is not None:
+            #self.client.client_close()
+            self.client._sock.close()
+            self.client = None
+
+        if self.listen_thread:
+            self.listen_thread.teardown()
+            self.listen_thread.wait(1000)
+            self.listen_thread = None
+
+    def device_connect(self):
+
         # Close the connections
         self.teardown()
 
@@ -201,7 +206,6 @@ class Osc(peel_devices.PeelDeviceBase):
 
     def on_state(self, new_state):
 
-        # print("STATE ", new_state)
         if new_state == "ONLINE" and self.is_recording:
             # Skip online messages while recording
             return
@@ -210,17 +214,6 @@ class Osc(peel_devices.PeelDeviceBase):
             new_state = "ONLINE"
         self.state = new_state
         self.update_state(new_state, "")
-
-    def teardown(self):
-        if self.client is not None:
-            #self.client.client_close()
-            self.client._sock.close()
-            self.client = None
-
-        if self.listen_thread:
-            self.listen_thread.teardown()
-            self.listen_thread.wait(1000)
-            self.listen_thread = None
 
     def thread_join(self):
         pass
@@ -269,9 +262,13 @@ class ReaperWidget(peel_devices.SimpleDeviceWidget):
         self.send_stop.setChecked(device.send_stop is True)
         self.channels.setText(str(self.channels.text()))
 
-    def update_device(self, device):
-        if not super().update_device(device):
+    def update_device(self, device, data=None):
+        if data is None:
+            data = {}
+
+        if not super().update_device(device, data):
             return False
+
         device.send_stop = self.send_stop.isChecked()
         try:
             device.channels = int(self.channels.text())
@@ -291,11 +288,11 @@ class ReaperWidget(peel_devices.SimpleDeviceWidget):
 
 class Reaper(Osc):
     """ https://www.cockos.com/reaper/sdk/osc/osc.php """
-    def __init__(self, name=None, host=None, port=8000, broadcast=None, listen_ip=None, listen_port=None,
-                 send_stop=False, channels=0):
-        super(Reaper, self).__init__(OscListenThreadReaper, name, host, port, broadcast, listen_ip, listen_port)
-        self.send_stop = send_stop
-        self.channels = channels
+    def __init__(self, name="Reaper"):
+        super(Reaper, self).__init__(OscListenThreadReaper, name)
+        self.send_stop = False
+        self.channels = 0
+        self.port = 8000
 
     @staticmethod
     def device():
@@ -308,28 +305,8 @@ class Reaper(Osc):
         return d
 
     @staticmethod
-    def dialog(settings):
-        return ReaperWidget(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-        ret = Reaper()
-        if widget.update_device(ret):
-            return ret
-
-    def edit(self, settings):
-        dlg = ReaperWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-
-        widget.update_device(self)
-        # widget.populate_from_device(self)
+    def dialog_class():
+        return ReaperWidget
 
     def command(self, command, argument):
         if command == "stop":
@@ -370,8 +347,8 @@ class UnrealDialog(peel_devices.SimpleDeviceWidget):
 
 
 class Unreal(Osc):
-    def __init__(self, name=None, host=None, port=None, broadcast=None, listen_ip=None, listen_port=None):
-        super(Unreal, self).__init__(OscListenThreadUnreal, name, host, port, broadcast, listen_ip, listen_port)
+    def __init__(self, name="Unreal"):
+        super(Unreal, self).__init__(OscListenThreadUnreal, name)
         self.shot_name = None
 
     @staticmethod
@@ -379,28 +356,8 @@ class Unreal(Osc):
         return "unreal"
 
     @staticmethod
-    def dialog(settings):
-        return UnrealDialog(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-
-        ret = Unreal()
-        if widget.update_device(ret):
-            return ret
-
-    def edit(self, settings):
-        dlg = UnrealDialog(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-
-        widget.update_device(self)
+    def dialog_class():
+        return UnrealDialog
 
     def get_state(self):
         if not self.enabled:
@@ -509,11 +466,12 @@ class OscListenDialog(peel_devices.SimpleDeviceWidget):
     def __init__(self, settings):
         super(OscListenDialog, self).__init__(settings, "Osc Listen", has_host=True, has_port=True,
                                               has_broadcast=True, has_listen_ip=True, has_listen_port=True)
+        self.listen_port.setText(settings.value("osclistenPort", "6666"))
 
 
 class OscListen(Osc):
-    def __init__(self, name=None, host=None, port=None, broadcast=None, listen_ip=None, listen_port=None):
-        super(OscListen, self).__init__(OscListenThreadPeel, name, host, port, broadcast, listen_ip, listen_port)
+    def __init__(self, name="Osc"):
+        super(OscListen, self).__init__(OscListenThreadPeel, name)
         self.shot_name = None
 
     @staticmethod
@@ -521,30 +479,8 @@ class OscListen(Osc):
         return "osclisten"
 
     @staticmethod
-    def dialog(settings):
-        dlg = OscListenDialog(settings)
-        dlg.listen_port.setText(settings.value("osclistenPort", "6666"))
-        return dlg
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-
-        device = OscListen()
-        widget.update_device(device)
-        return device
-
-    def edit(self, settings):
-        dlg = OscListenDialog(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-
-        widget.update_device(self)
+    def dialog_class():
+        return OscListenDialog
 
     def command(self, command, argument):
 

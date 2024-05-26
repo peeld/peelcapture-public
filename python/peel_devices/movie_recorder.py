@@ -26,32 +26,36 @@
 from peel_devices import SimpleDeviceWidget, PeelDeviceBase
 import requests
 
+
+class MovieRecorderWidget(SimpleDeviceWidget):
+    def __init__(self, settings):
+        super().__init__(settings=settings, title="MovieRecorder", has_host=True,
+                         has_port=False, has_broadcast=False, has_listen_ip=False, has_listen_port=False)
+
+
 class MovieRecorder(PeelDeviceBase):
 
-    def __init__(self, name=None, host=None):
+    def __init__(self, name="MovieRecorder"):
         super(MovieRecorder, self).__init__(name)
-        self.host = host
+        self.host = "192.168.1.100"
         self.current_take = None
         self.error = None
         self.state = None
         self.info = None
 
-        self.reconfigure(name=name, host=host)
-
     def as_dict(self):
         return {'name': self.name,
                 'host': self.host}
 
-    def reconfigure(self, name, host=None):
+    def reconfigure(self, name, **kwargs):
 
-        if host is not None:
-            self.host = host
-
+        self.host = kwargs.get('host')
         self.current_take = None
         self.error = None
         self.state = None
         self.name = name
 
+    def connect_device(self):
         self.update_state()
 
     def get_state(self):
@@ -115,39 +119,13 @@ class MovieRecorder(PeelDeviceBase):
             self.state = "ERROR"
             self.update_state(self.state, "")
 
-
     @staticmethod
     def device():
         return "movierecorder"
 
     @staticmethod
-    def dialog(settings):
-        return SimpleDeviceWidget(settings=settings, title="MovieRecorder", has_host=True,
-                                 has_port=False, has_broadcast=False, has_listen_ip=False, has_listen_port=False)
-
-    @staticmethod
-    def dialog_callback(widget):
-
-        if not widget.do_add():
-            return
-
-        ret = MovieRecorder()
-        if widget.update_device(ret):
-            return ret
-
-    def edit(self, settings):
-        dlg = SimpleDeviceWidget(settings=settings, title="MovieRecorder", has_host=True,
-                                 has_port=False, has_broadcast=False, has_listen_ip=False, has_listen_port=False)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-
-        if not widget.do_add():
-            return
-
-        widget.update_device(self)
-
+    def dialog_class():
+        return MovieRecorderWidget
 
     def has_harvest(self):
         return False

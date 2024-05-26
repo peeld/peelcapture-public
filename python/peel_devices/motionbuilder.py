@@ -22,309 +22,150 @@
 # CONTRACT, TORT (INCLUDING NEGLIGENCE), OR OTHERWISE, REGARDLESS OF WHETHER SUCH DAMAGES WERE FORESEEABLE AND WHETHER
 # OR NOT THE LICENSOR WAS ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
 
-
 from peel_devices import PeelDeviceBase, SimpleDeviceWidget
-from PySide6 import QtWidgets, QtNetwork, QtGui, QtCore
+from PySide6 import QtCore, QtWidgets
 import socket
-from select import select
-import time
-import threading
-import traceback
-
-"""
-https://download.autodesk.com/us/motionbuilder/sdk-documentation/PythonSDK/classpyfbsdk_1_1_f_b_player_control.html
-"""
 
 
 class SocketThread(QtCore.QThread):
 
-    state_change = QtCore.Signal()
+    state_change = QtCore.Signal(str)
 
-    def __init__(self, host, port=4242):
+    def __init__(self, host, port):
         super(SocketThread, self).__init__()
         self.host = host
         self.port = port
-        self.socket = None
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.running = True
         self.messages = []
         self.error_flag = None
-        self.message_sem = threading.Semaphore()
-        self.is_init = True
-        self.python_version = ""
-
-    def tcp_connect(self):
-        if self.socket is not None:
-            self.tcp_disconnect()
-
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
-        self.socket.setblocking(False)
-        self.socket.settimeout(1)
-        try:
-            print(f"Connecting to mobu: {self.host} {self.port}")
-            self.socket.connect((self.host, self.port))
-        except socket.timeout:
-            self.socket.close()
-            self.socket = None
-            self.state_change.emit()
-            return False
-        except IOError as e:
-            print("Error connecting to motion builder")
-            self.socket.close()
-            self.socket = None
-            self.state_change.emit()
-            raise e
-
-        self.send("from pyfbsdk import FBPlayerControl",
-                  ("Python Scripting Console", "Copyright", "All rights reserved", "Python "))
-
-        self.running = True
-        return True
-
-    def is_running(self):
-        return self.running is True and self.socket is not None
-
-    def tcp_disconnect(self):
-        if self.socket is None:
-            return
-
-        try:
-            self.socket.shutdown(socket.SHUT_RDWR)
-            self.socket.close()
-        except IOError as e:
-            print("Error closing mobu socket: " + str(e))
-
-        self.socket = None
-        self.state_change.emit()
-
-    def stop_thread(self):
-        self.running = False
-        self.message_sem.release()
-        self.tcp_disconnect()
-
-    def send(self, message, response=None):
-        self.error_flag = False
-        self.messages.append((message, response))
-        self.message_sem.release()
-
-    def send_(self):
-
-        if self.socket is None:
-            return
-
-        if not self.messages:
-            return
-
-        command, expected_response = self.messages.pop(0)
-
-        if expected_response is None:
-            expected_response = []
-        else:
-            expected_response = list(expected_response)
-
-        command += "\r\n"
-
-        try:
-            self.socket.send(command.encode("utf8"))
-        except IOError as e:
-            print("Mobu send error: " + str(e))
-            self.tcp_disconnect()
-            return
-
-        timeout = 0
-        while expected_response:
-
-            # wait for a response (for 500ms)
-            rd, _,  _ = select([self.socket], [], [], 0.5)
-
-            if self.socket not in rd:
-                timeout += 1
-                if timeout > 4:
-                    print("Mobu timed out waiting for: " + str(expected_response))
-                    self.error_flag = True
-                    self.state_change.emit()
-                    break
-                continue
-
-            try:
-                data = self.socket.recv(4096)
-
-                # print("DATA:" + str(len(data)) + "~" + data.decode('ascii') + '~')
-
-                for line in data.decode('ascii').split("\n"):
-
-                    line = line.strip()
-
-                    if len(line) == 0:
-                        continue
-
-                    if line == ">>>" or line == ">>> >>>":
-                        continue
-
-                    if self.is_init:
-                        if line.startswith("Python "):
-                            self.python_version = line[7:]
-                        self.is_init = False
-
-                    response = expected_response.pop(0)
-
-                    if not line.startswith(response):
-                        print("Invalid response from mobu, excepted: " + response)
-                        print("Got: [" + line + "]")
-                        print("Command was: " + command)
-                        self.error_flag = True
-                    else:
-                        self.error_flag = False
-
-                    if len(expected_response) == 0:
-                        break
-
-            except IOError as e:
-                print(str(e))
-                self.tcp_disconnect()
-                return
-
-        self.state_change.emit()
 
     def run(self):
 
         while self.running:
 
-            if self.socket is None:
-                if not self.tcp_connect():
-                    time.sleep(5)
-                    continue
+            try:
+                ret = self.socket.recvfrom(1024, 0)
+            except IOError as e:
+                self.state_change.emit("OFFLINE")
+                print("offline")
+                return
 
-            self.send_()
+            if not ret:
+                print(".")
+                continue
 
-            if not self.messages:
-                self.message_sem.acquire()
+            if ret[0] == b'RECORDING\x00':
+                self.state_change.emit("RECORDING")
 
-        self.tcp_disconnect()
-        self.deleteLater()
+            if ret[0] == b'STOPPED\x00':
+                self.state_change.emit("ONLINE")
 
-    def stop(self):
+            if ret[0] == b'HELLO\x00':
+                self.state_change.emit("ONLINE")
+
+    def send(self, msg):
+        self.socket.sendto(msg.encode("utf8"), (self.host, self.port))
+
+    def close_socket(self):
+
+        if self.socket is None:
+            print("Closing a closed socket")
+            return
+
+        try:
+            self.socket.shutdown(socket.SHUT_RDWR)
+            self.socket.close()
+            self.socket = None
+        except IOError as e:
+            print("Error closing Mobu Device socket: " + str(e))
+
+    def teardown(self):
+        self.close_socket()
         self.running = False
+        self.wait(3000)
 
 
-class MobuWidget(SimpleDeviceWidget):
+class MobuDeviceWidget(SimpleDeviceWidget):
     def __init__(self, settings):
-        super().__init__(settings, "MotionBuilder", has_host=True, has_port=False,
+        super().__init__(settings, "MotionBuilderDevice", has_host=True, has_port=True,
                          has_broadcast=False, has_listen_ip=False, has_listen_port=False)
         link = 'https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-motionbuilder/'
-        msg = "<P><FONT COLOR=\"#f55\"><B>This device is deprecated and has problems with the latest versions of mobu</B><BR>"
-        msg += "<B>Please install the Peel Capture MotionBuilder plugin and use the mobu-device now</FONT></B></P>"
-        msg += '<P><A HREF="' + link + '">Documentation</A></P>'
-        msg += "<P>Connects to motion builder on tcp port 4242.<BR>"
+        msg = '<P><A HREF="' + link + '">Documentation</A></P>'
+        msg += "<P>Connects to Peel Capture Motion Builder Device</P>"
+        msg += "<P>Requires the Peel Capture device to be installed in motion builder</P>"
         msg += "<P>Records a new take and sets the take name</P>"
+
+        if self.port.text() == "":
+            self.port.setText("8833")
 
         self.set_info(msg)
 
 
-class MotionBuilder(PeelDeviceBase):
-    def __init__(self, name, host):
-        super(MotionBuilder, self).__init__(name)
-        self.host = host
+class MotionBuilderDevice(PeelDeviceBase):
+    def __init__(self, name="MotionBuilder"):
+        super(MotionBuilderDevice, self).__init__(name)
         self.recording = None
-        self.tcp = None
-        self.reconfigure(name, host)
         self.current_take = None
-        self.takename_timer = QtCore.QTimer(self)
-        self.takename_timer.setInterval(1000)
-        self.takename_timer.setSingleShot(True)
-        self.takename_timer.timeout.connect(self.set_take_name)
+        self.udp = None
+        self.current_state = None
+        self.host = "127.0.0.1"
+        self.port = 8888
 
     @staticmethod
     def device():
-        return "mobu"
+        return "mobu-device"
 
     def as_dict(self):
-        return {'name': self.name,
-                'host': self.host}
+        if self.udp is None:
+            return {'name': self.name,
+                    'host': None,
+                    'port': None}
+        else:
+            return {'name': self.name,
+                    'host': self.udp.host,
+                    'port': self.udp.port}
+
+    def reconfigure(self, name, **kwargs):
+        self.name = name
+        self.host = kwargs.get('host')
+        self.port = kwargs.get('port')
+
+    def connect_device(self):
+        self.teardown()
+        self.udp = SocketThread(self.host, self.port)
+        self.udp.start()
+        self.udp.state_change.connect(self.do_state)
+        self.udp.send("PING")
+        self.update_state("OFFLINE")
 
     def command(self, command, arg):
 
-        true_response = "True"
-
-        if command == "play":
-            self.tcp.send("print(FBPlayerControl().GotoStart())", (true_response,))
-            self.tcp.send("print(FBPlayerControl().Play())", (true_response,))
-
         if command == "record":
-            self.current_take = arg
-            self.recording = True
-            self.tcp.send("print(FBPlayerControl().GotoStart())", (true_response,))
-            self.tcp.send("print(FBPlayerControl().Record(False))", (true_response,))
-            self.tcp.send("print(FBPlayerControl().Play())", (true_response,))
-            self.takename_timer.start()
+            self.udp.send("RECORD=" + arg)
 
-        if command == "stop":
-            self.tcp.send("FBSystem().CurrentTake.Name=\"" + self.current_take + "\"")
-            self.tcp.send("print(FBPlayerControl().Stop())", (true_response,))
-            self.recording = False
+        if command == 'stop':
+            self.udp.send("STOP")
 
-    def set_take_name(self):
-        self.tcp.send("FBSystem().CurrentTake.Name=\"" + self.current_take + "\"")
-        self.tcp.send("print(FBSystem().CurrentTake.Name)", (self.current_take,))
-
-    @staticmethod
-    def dialog(settings):
-        dlg = MobuWidget(settings)
-        return dlg
-
-    @staticmethod
-    def dialog_callback(widget):
-
-        if not widget.do_add():
-            return
-
-        return MotionBuilder(widget.name.text(), widget.host.text())
-
-    def reconfigure(self, name, host=None):
-
-        self.name = name
-        self.host = host
-
-        if self.tcp:
-            self.tcp.stop_thread()
-            self.tcp.wait()
-
-        self.tcp = SocketThread(self.host)
-        self.tcp.start()
-        self.tcp.state_change.connect(self.do_state)
-
-        self.do_state()
-
-    def do_state(self):
-        self.update_state(self.get_state(), "")
-
-    def edit(self, settings):
-        dlg = MobuWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-
-        # calls self.reconfigure()
-        widget.update_device(self)
-
-    def get_state(self):
-
-        if not self.enabled:
-            return "OFFLINE"
-
-        if self.tcp is None or self.tcp.socket is None:
-            return "OFFLINE"
-
-        if self.tcp.error_flag is True:
-            return "ERROR"
-
-        if self.recording is True:
-            return "RECORDING"
-        else:
-            return "ONLINE"
+        if command == 'play':
+            self.udp.send("PLAY")
 
     def teardown(self):
-        if self.tcp:
-            self.tcp.stop_thread()
+        if self.udp:
+            self.udp.teardown()
+            self.udp = None
+
+    def do_state(self, state):
+        self.current_state = state
+        self.update_state(state, "")
+
+    def get_state(self):
+        if self.udp is None:
+            return "ERROR"
+        return self.current_state
+
+    @staticmethod
+    def dialog_class():
+        return MobuDeviceWidget
+
+

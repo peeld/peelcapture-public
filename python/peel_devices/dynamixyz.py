@@ -42,31 +42,13 @@ class AddDxyzWidget(SimpleDeviceWidget):
 
 class Dynamixyz(XmlUdpDeviceBase):
 
-    def __init__(self, name=None, host=None, port=None, broadcast=None, listen_ip=None, listen_port=None, fmt=None):
-        super(Dynamixyz, self).__init__(name, host, port, broadcast, listen_ip, listen_port, fmt)
+    def __init__(self, name="Dynamxyz"):
+        super(Dynamixyz, self).__init__(name)
 
     @staticmethod
     def device():
         return "dynamixyz"
 
     @staticmethod
-    def dialog(settings, parent=None):
-        return AddDxyzWidget(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-        ret = Dynamixyz()
-        if widget.update_device(ret):
-            return ret
-
-    def edit(self, settings):
-        dlg = AddDxyzWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
+    def dialog_class():
+        return AddDxyzWidget

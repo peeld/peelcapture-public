@@ -177,7 +177,6 @@ class AddWidget(BaseDeviceWidget):
             device.listen_port = int(self.listen_port.text())
             device.mha = self.mha.isChecked()
             device.prefix_name = self.prefix_name.isChecked()
-            device.start_services()
         except ValueError:
             QtWidgets.QMessageBox(self, "Error", "Invalid port")
 
@@ -198,21 +197,12 @@ class AddWidget(BaseDeviceWidget):
 
 class EpicIPhone(PeelDeviceBase):
 
-    def __init__(self,
-                 name,
-                 phone_ip,
-                 phone_port=8000,
-                 listen_ip="0.0.0.0",
-                 listen_port=6000,
-                 takes=None,
-                 mha=False,
-                 prefix_name=False):
-
+    def __init__(self, name="IPhone"):
         super(EpicIPhone, self).__init__(name)
-        self.phone_ip = phone_ip
-        self.phone_port = phone_port
-        self.listen_ip = listen_ip
-        self.listen_port = listen_port
+        self.phone_ip = "192.168.1.100"
+        self.phone_port = 8000
+        self.listen_ip = "0.0.0.0"
+        self.listen_port = 6000
         self.server = None
         self.thread = None
         self.takeNumber = None
@@ -221,32 +211,41 @@ class EpicIPhone(PeelDeviceBase):
         self.info = ""
         self.state = "OFFLINE"
         self.client = None
-        self.ping_timer = QtCore.QTimer()
-        self.ping_timer.timeout.connect(self.ping_timeout)
-        self.ping_timer.setInterval(8000)
-        self.ping_timer.setSingleShot(False)
-        self.ping_timer.start()
+        self.ping_timer = None
         self.got_response = False
-        self.mha = mha
-        self.prefix_name = prefix_name
-
-        if takes is None:
-            self.takes = {}
-        else:
-            self.takes = takes
+        self.mha = False
+        self.prefix_name = False
+        self.takes = {}
         self.current_take = None
-
         self.query = False
+        self.dispatcher = None
 
-        self.dispatcher = dispatcher.Dispatcher()
-        self.dispatcher.set_default_handler(self.callback, True)
 
-        # print("Phone/UDP %s  %s" % (phone_ip, phone_port))
+    @staticmethod
+    def device():
+        return "epic-iphone"
 
-        self.start_services()
+    def as_dict(self):
+        return {'name': self.name,
+                'phone_ip': self.phone_ip,
+                'phone_port': self.phone_port,
+                'listen_ip': self.listen_ip,
+                'listen_port': self.listen_port,
+                'takes': self.takes,
+                'mha': self.mha,
+                'prefix_name': self.prefix_name}
 
-    def start_services(self):
+    def reconfigure(self, name, **kwargs):
+        self.name = name
+        self.phone_ip = kwargs.get('phone_ip')
+        self.phone_port = kwargs.get('phone_port')
+        self.listen_ip = kwargs.get('listen_ip')
+        self.listen_port = kwargs.get('listen_port')
+        self.takes = kwargs.get('takes')
+        self.mha = kwargs.get('mha')
+        self.prefix_name = kwargs.get('prefix_name')
 
+    def teardown(self):
         if self.thread is not None and self.server is not None:
             print("Stopping current iphone OSC Server")
             self.server.shutdown()
@@ -254,6 +253,28 @@ class EpicIPhone(PeelDeviceBase):
             self.thread.join()
             self.thread = None
             print("OSC server stopped")
+
+        if self.ping_timer:
+            self.ping_timer.stop()
+
+    def connect_device(self):
+
+        self.teardown()
+
+        if self.dispatcher is None:
+            # Create the dispatcher if it doesn't already exist
+            self.dispatcher = dispatcher.Dispatcher()
+            self.dispatcher.set_default_handler(self.callback, True)
+
+        if self.ping_timer is None:
+            # Create the timer if it does not already exist
+            self.ping_timer = QtCore.QTimer()
+            self.ping_timer.timeout.connect(self.ping_timeout)
+            self.ping_timer.setInterval(8000)
+            self.ping_timer.setSingleShot(False)
+
+        self.ping_timer.start()
+
 
         print("Creating udp client")
         self.client = udp_client.SimpleUDPClient(self.phone_ip, self.phone_port)
@@ -275,29 +296,7 @@ class EpicIPhone(PeelDeviceBase):
             print("TARGET: " + str(self.listen_ip) + " " + str(self.listen_port))
             self.client.send_message("/OSCSetSendTarget", [self.listen_ip, self.listen_port])
 
-    @staticmethod
-    def device():
-        return "epic-iphone"
-
-    def as_dict(self):
-        return {'name': self.name,
-                'phone_ip': self.phone_ip,
-                'phone_port': self.phone_port,
-                'listen_ip': self.listen_ip,
-                'listen_port': self.listen_port,
-                'takes': self.takes,
-                'mha': self.mha,
-                'prefix_name': self.prefix_name}
-
-    def teardown(self):
-        if self.server:
-            self.server.shutdown()
-            self.server.server_close()
-        return
-
     def command(self, command, arg):
-
-        # print(f"{command} {arg}")
 
         if command == "takeNumber":
             self.takeNumber = int(arg)
@@ -383,6 +382,10 @@ class EpicIPhone(PeelDeviceBase):
                 self.state = "OFFLINE"
                 self.update_state(self.state, "")
 
+        if self.client is None:
+            print("No client while sending ping")
+            return
+
         self.got_response = False
         if self.query:
             self.client.send_message('/BatteryQuery', 1)
@@ -436,33 +439,8 @@ class EpicIPhone(PeelDeviceBase):
         return thread
 
     @staticmethod
-    def dialog(settings):
-        return AddWidget(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-
-        try:
-            name = widget.name.text()
-            phone_ip = widget.phone_ip.text()
-            phone_port = int(widget.phone_port.text())
-            listen_ip = widget.listen_ip.ip()
-            listen_port = int(widget.listen_port.text())
-            return EpicIPhone(name, phone_ip, phone_port, listen_ip, listen_port)
-        except ValueError:
-            QtWidgets.QMessageBox(widget, "Error", "Invalid port")
-
-    def edit(self, settings):
-        dlg = AddWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
+    def dialog_class():
+        return AddWidget
 
     def list_takes(self):
         return self.takes.keys()

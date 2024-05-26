@@ -38,46 +38,26 @@ class RokokoWidget(SimpleDeviceWidget):
 
 class Rokoko(XmlUdpDeviceBase):
 
-    def __init__(self, name=None, host=None, port=14047, broadcast=None, listen_ip=None, listen_port=14048,
-                 enter_clip_editing=False):
-        super().__init__(name, host, port, broadcast, listen_ip, listen_port, fmt="Rokoko",
-                         enter_clip_editing=enter_clip_editing)
+    def __init__(self, name="Rokoko"):
+        super().__init__(name)
+        self.enter_clip_editing = False
         
     def as_dict(self):
-        return {'name': self.name,
-                'host': self.host,
-                'port': self.port,
-                'broadcast': self.broadcast,
-                'listen_ip': self.listen_ip,
-                'listen_port': self.listen_port,
-                'enter_clip_editing': self.enter_clip_editing }
+        data = super().as_dict()
+        data["enter_clip_editing"] = self.enter_clip_editing
+        return data
+
+    def reconfigure(self, name, **kwargs):
+        super().reconfigure(name, **kwargs)
+        self.enter_clip_editing = kwargs.get('enter_clip_editing')
 
     @staticmethod
     def device():
         return "rokoko"
 
     @staticmethod
-    def dialog(settings):
-        return RokokoWidget(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-        ret = Rokoko()
-        if widget.update_device(ret):
-            return ret
-
-    def edit(self, settings):
-
-        dlg = RokokoWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
+    def dialog_class():
+        return RokokoWidget
 
 
 

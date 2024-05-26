@@ -30,6 +30,7 @@ from vicon_core_api import Client, RPCError
 from PySide6 import QtWidgets, QtCore
 
 from peel_devices import PeelDeviceBase, SimpleDeviceWidget
+from PeelApp import cmd
 
 import time
 import os.path, os
@@ -101,27 +102,62 @@ class ShogunWidget(SimpleDeviceWidget):
                                            has_broadcast=False, has_listen_ip=False, has_listen_port=False,
                                            has_set_capture_folder=True)
 
+        self.timecode_cb = QtWidgets.QCheckBox("")
+        self.timecode_cb.setChecked(settings.value(self.title + "Timecode") == "True")
+        self.form_layout.addRow("Timecode", self.timecode_cb)
+
+        self.subjects_cb = QtWidgets.QCheckBox("")
+        self.subjects_cb.setChecked(settings.value(self.title + "Subjects") == "True")
+        self.form_layout.addRow("Subjects", self.subjects_cb)
+
         link = 'https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-vicon-shogun/'
         msg = '<P><A HREF="' + link + '">Documentation</A></P>'
         self.set_info(msg)
 
+    def populate_from_device(self, device):
+        super().populate_from_device(device)
+        self.timecode_cb.setChecked(device.timecode is True)
+        self.subjects_cb.setChecked(device.subjects is True)
+
+    def update_device(self, device, data=None):
+        if data is None:
+            data = {}
+
+        data["timecode"] = self.timecode_cb.isChecked()
+        data["subjects"] = self.subjects_cb.isChecked()
+        super().update_device(device, data)
+
+    def do_add(self):
+
+        if not super().do_add():
+            return False
+
+        self.settings.setValue(self.title + "Timecode", str(self.timecode_cb.isChecked()))
+        self.settings.setValue(self.title + "Subjects", str(self.subjects_cb.isChecked()))
+
+        return True
+
 
 class ViconShogun(PeelDeviceBase):
 
-    def __init__(self, name, host, set_capture_folder=False):
+    def __init__(self, name="Shogun"):
         super(ViconShogun, self).__init__(name)
-        self.host = host
+        self.host = "192.168.1.100"
         self.client = None
         self.capture = None
         self.playback = None
         self.error = None
         self.record_id = None
         self.play_id = None
-        self.subject = None
-        self.set_capture_folder = set_capture_folder
+        self.set_capture_folder = None
         self.capture_folder = None
         self.takes = []
-        self.connect()
+        self.timecode = None
+        self.subjects = None
+
+        self.plugin_id = cmd.createDevice("Vicon")
+        if self.plugin_id == -1:
+            raise RuntimeError("Could not create vicon plugin device")
 
     @staticmethod
     def device():
@@ -130,51 +166,50 @@ class ViconShogun(PeelDeviceBase):
     def as_dict(self):
         return {'name': self.name,
                 'host': self.host,
-                'set_capture_folder': self.set_capture_folder
+                'set_capture_folder': self.set_capture_folder,
+                'timecode': self.timecode,
+                'subjects': self.subjects
                 }
 
-    def connect(self):
+    def reconfigure(self, name, host=None, set_capture_folder=False, timecode=False, subjects=False):
+
+        cmd.writeLog(f"Shogun reconfigure {name} {host} {set_capture_folder} {timecode} {subjects}\n")
+        print(f"Shogun reconfigure {name} {host} {set_capture_folder} {timecode} {subjects} ")
+
+        self.name = name
+        self.host = host
+        self.timecode = timecode
+        self.subjects = subjects
+        self.set_capture_folder = set_capture_folder
+
+    def connect_device(self):
+
+        print("Connecting to SHOGUN!")
+        cmd.writeLog("Connecting to shogun\n")
+        cmd.writeLog(f"Host: {self.host}\n")
+        cmd.writeLog(f"Timecode: {self.timecode}\n")
+        cmd.writeLog(f"Subjects: {self.subjects}\n")
+        cmd.writeLog(f"Set Capture Folder: {self.set_capture_folder}\n")
+
         try:
+            # set up the c++ plugin to get timecode and subjects
+            config = f"host={self.host}\ntimecode={int(self.timecode)}\nsubjects={int(self.subjects)}\n"
+            cmd.configureDevice(self.plugin_id, config)
+
             self.client = Client(self.host)
             self.capture = CaptureServices(self.client)
             self.playback = PlaybackServices(self.client)
-            self.subject = SubjectServices(self.client)
         except Exception as e:
             self.client = None
             self.capture = None
-            self.capture = None
-            print("Shogun could not connect: " + str(e))
+            self.playback = None
+            cmd.writeLog("Shogun could not connect: " + str(e))
 
     def __str__(self):
         return self.name
 
     def teardown(self):
-        pass
-
-    def get_subjects(self):
-        if self.subject is None:
-            return []
-        state, subjects = self.subject.subjects()
-        if not state:
-            print("Could not get subjects from shogun")
-
-        state, enabled = self.subject.enabled_subjects()
-
-        ret = []
-
-        for name in subjects:
-            state, subject_type = self.subject.subject_type(name)
-
-            if subject_type != SubjectServices.ESubjectType.ELabelingCluster:
-                if subject_type == SubjectServices.ESubjectType.EGeneral:
-                    ret.append((name, "actor", name in enabled))
-                if subject_type == SubjectServices.ESubjectType.ERigidObject:
-                    ret.append((name, "prop", name in enabled))
-
-        return ret
-
-    def set_subject(self, name, enabled):
-        self.subject.set_subject_enabled(name, enabled)
+        cmd.deleteDevice(self.plugin_id)
 
     def get_state(self):
 
@@ -188,25 +223,30 @@ class ViconShogun(PeelDeviceBase):
             return "OFFLINE"
 
         try:
+            cmd.writeLog("Getting shogun state\n")
             ret, id, state = self.capture.latest_capture_state()
-            # print(f"SHOGUN STATE: {ret} {id} {state}")
+            cmd.writeLog(f"SHOGUN STATE: {ret} {id} {state}")
             if state in [CaptureServices.EState.EStarted]:
+                cmd.writeLog("Shogun is recording\n")
                 return "RECORDING"
 
             ret, state = self.playback.state()
+            print(ret, state)
             if state.mode == PlaybackServices.EOutputMode.ELive:
+                cmd.writeLog("Shogun is online")
                 return "ONLINE"
 
+            cmd.writeLog("Shogun is offline")
             return "OFFLINE"
 
         except RPCError as e:
-            print("Shotgun RPC error - make sure shotgun post is not running")
-            print(str(e))
+            cmd.writeLog("Shotgun RPC error - make sure shotgun post is not running")
+            cmd.writeLog(str(e))
             self.error = str(e)
             return "ERROR"
 
         except Exception as e:
-            print(str(e))
+            cmd.writeLog(str(e))
             self.error = str(e)
             return "ERROR"
 
@@ -230,13 +270,13 @@ class ViconShogun(PeelDeviceBase):
             self.takes = [i.capture_name for i in items]
 
         except RPCError as e:
-            print("Shotgun RPC error - make sure shotgun post is not running")
-            print(str(e))
+            cmd.writeLog("Shotgun RPC error - make sure shotgun post is not running")
+            cmd.writeLog(str(e))
             self.error = str(e)
             return "ERROR"
 
         except Exception as e:
-            print(str(e))
+            cmd.writeLog(str(e))
 
     # def takes(self):
     #     ret = []
@@ -273,17 +313,19 @@ class ViconShogun(PeelDeviceBase):
         if command == "record":
             ret = self.capture.set_capture_name(arg)
             if not ret:
-                print("Could not set capture name for shogun")
+                cmd.writeLog("Could not set capture name for shogun")
                 self.error = "Capture Name Error"
                 return
             ret, self.record_id = self.capture.start_capture()
             if not ret:
                 self.error = "Could not record"
-                print("Shogun could not record")
+                cmd.writeLog("Shogun could not record")
                 self.update_state("ERROR", "Could not record")
                 return
             else:
                 print("Shogun recording ID: " + str(self.record_id))
+
+            # State is queried by timer below.
 
         if command == "stop":
             ret = True
@@ -318,33 +360,12 @@ class ViconShogun(PeelDeviceBase):
         QtCore.QTimer.singleShot(250, self.update_state)
 
     @staticmethod
-    def dialog(settings):
-        return ShogunWidget(settings)
+    def dialog_class():
+        return ShogunWidget
 
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
 
-        return ViconShogun(widget.name.text(), widget.host.text(), widget.set_capture_folder.isChecked())
 
-    def edit(self, settings):
-        dlg = ShogunWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
 
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-
-        widget.update_device(self)
-
-    def reconfigure(self, name, host=None, set_capture_folder=False):
-        self.name = name
-        self.host = host
-        self.set_capture_folder = set_capture_folder
-        self.connect()
-        self.update_state()
 
 
 

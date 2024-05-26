@@ -67,7 +67,7 @@ class AddWidget(BaseDeviceWidget):
 
 
 class Audio(PeelDeviceBase):
-    def __init__(self, name):
+    def __init__(self, name="Audio"):
         super(Audio, self).__init__(name)
         self.state = "ONLINE"
 
@@ -86,6 +86,12 @@ class Audio(PeelDeviceBase):
             return "OFFLINE"
         return self.state
 
+    def reconfigure(self, **kwargs):
+        pass
+
+    def connect_device(self):
+        pass
+
     def teardown(self):
         pass
 
@@ -100,30 +106,8 @@ class Audio(PeelDeviceBase):
             self.update_state(self.state, "")
 
     @staticmethod
-    def dialog(settings):
-        return AddWidget(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-
-        if not widget.do_add():
-            return
-
-        device = Audio("")
-        if widget.update_device(device):
-            return device
-
-    def edit(self, settings):
-
-        dlg = AddWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-
-        widget.update_device(self)
+    def dialog_class():
+        return AddWidget
 
     def recording_started(self):
         """ called by the main app when audio recording starts okay """

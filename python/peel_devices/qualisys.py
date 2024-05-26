@@ -95,27 +95,28 @@ class QualisysDeviceDialog(BaseDeviceWidget):
 
 class QualisysDevice(PeelDeviceBase):
 
-    def __init__(self, name=None, host=None, password=None):
+    def __init__(self, name="Qualisys"):
         super(QualisysDevice, self).__init__(name)
         self.conn = None
         self.take_name = None
         self.name = name
-        self.host = host
-        self.password = password
+        self.host = "192.168.1.100"
+        self.password = ""
 
         # Create a loop that stays as long as the device is added and/or program is running
-        self.loop = asyncio.new_event_loop()
+        self.loop = None
         self.state = "OFFLINE"
         self.info = None
-        self._update_state("OFFLINE", "Device is offline.")
-
-        if host is not None and password is not None:
-            self.reconfigure(name, host=host, password=password)
 
     def reconfigure(self, name, **kwargs):
         self.name = name
         self.host = kwargs['host']
         self.password = kwargs['password']
+
+    def connect_device(self):
+
+        if self.loop is None:
+            self.loop = asyncio.new_event_loop()
 
         self._update_state("OFFLINE", None)
 
@@ -233,24 +234,5 @@ class QualisysDevice(PeelDeviceBase):
         return self.info
 
     @staticmethod
-    def dialog(settings):
-        return QualisysDeviceDialog(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-
-        device = QualisysDevice()
-        if widget.update_device(device):
-            return device
-
-    def edit(self, settings):
-        dlg = QualisysDeviceDialog(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
+    def dialog_class():
+        return QualisysDeviceDialog

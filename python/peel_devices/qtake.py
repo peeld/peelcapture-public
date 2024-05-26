@@ -40,15 +40,14 @@ class QTakeWidget(SimpleDeviceWidget):
 
 class QTake(PeelDeviceBase):
 
-    def __init__(self, name="QTake", host=None):
+    def __init__(self, name="QTake"):
         super(QTake, self).__init__(name)
-        self.host = host
+        self.host = "192.168.1.100"
         # QTake only listens on 7001
         self.port = 7001
         self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.state = "OFFLINE"
         self.info = None
-        self.connect_udp()
         self.shot_name = None
         self.take_number = None
 
@@ -60,7 +59,12 @@ class QTake(PeelDeviceBase):
         return {'name': self.name,
                 'host': self.host}
 
-    def connect_udp(self):
+    def reconfigure(self, name, host=None):
+        self.name = name
+        self.host = host
+
+    def connect_device(self):
+        self.teardown()
         xml = "<qtake_remote>\n<connect_client uuid='PeelCapture' type='1'/>\n</qtake_remote>\n"
         self.state = "ONLINE"
         self.update_state(self.state, self.info)
@@ -126,28 +130,7 @@ class QTake(PeelDeviceBase):
             self.take_number = arg
 
     @staticmethod
-    def dialog(settings):
-        return QTakeWidget(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-        return QTake(widget.name.text(), widget.host.text())
-
-    def edit(self, settings):
-        dlg = QTakeWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
-
-    def reconfigure(self, name, host=None):
-        self.name = name
-        self.host = host
-        self.connect_udp()
+    def dialog_class():
+        return QTakeWidget
 
 

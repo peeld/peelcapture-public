@@ -67,16 +67,17 @@ class DisguiseDialog(SimpleDeviceWidget):
 
         return True
 
+
 class Disguise(PeelDeviceBase):
-    def __init__(self, name=None, host=None, prefix_device_name=None):
+    def __init__(self, name="Disguise"):
         super(Disguise, self).__init__(name)
-        self.host = host
+        self.host = "192.168.1.100"
         self.error = None
         self.message = None
-        self.enabled = False
+        self.enabled = True
         self.recording = False
         self.fp = None
-        self.prefix_device_name = prefix_device_name
+        self.prefix_device_name = False
         self.currentShotName = None
         self.currentTake = 0
 
@@ -87,7 +88,12 @@ class Disguise(PeelDeviceBase):
     def as_dict(self):
         return {'name': self.name,
                 'host': self.host,
-                'prefix_device_name': self.prefix_device_name }
+                'prefix_device_name': self.prefix_device_name}
+
+    def reconfigure(self, name, **kwargs):
+        self.name = name
+        self.host = kwargs.get("host", None)
+        self.prefix_device_name = kwargs.get("prefix_device_name", False)
 
     def __str__(self):
         msg = self.name
@@ -107,7 +113,6 @@ class Disguise(PeelDeviceBase):
 
         if self.recording:
             return "RECORDING"
-
 
         print("Unknown state: ")
         return "ERROR"
@@ -138,7 +143,6 @@ class Disguise(PeelDeviceBase):
                 self.update_state("ERROR", "")
             return
 
-
         print("DISGUISE ignored the command:  " + str(command) + " " + str(arg))
 
     def record(self, take):
@@ -154,7 +158,7 @@ class Disguise(PeelDeviceBase):
                 "take": take
                 })
             data = data.encode('utf-8')
-            req =  urllib.request.Request(url, data=data)
+            req = urllib.request.Request(url, data=data)
             f = urllib.request.urlopen(req, timeout=1, method="POST")
             resp = json.load(f.read())
             if resp['success']:
@@ -169,7 +173,6 @@ class Disguise(PeelDeviceBase):
         except Exception as e:
             print("DISGUISE ERROR: " + str(e))
             return None
-    
 
     def stop(self, take=None):
         if not self.recording:
@@ -202,33 +205,11 @@ class Disguise(PeelDeviceBase):
             return None
 
     @staticmethod
-    def dialog(settings):
-        return DisguiseDialog(settings)
+    def dialog_class():
+        return DisguiseDialog
 
-    @staticmethod
-    def dialog_callback(widget):
-
-        if not widget.do_add():
-            return
-
-        device = Disguise()
-        widget.update_device(device)
-        return device
-
-    def edit(self, settings):
-        dlg = DisguiseDialog(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
-
-    def reconfigure(self, name, **kwargs):
-        self.name = name
-        self.host = kwargs.get("host", None)
-        self.prefix_device_name = kwargs.get("prefix_device_name", False)
+    def device_connect(self):
+        pass
 
     def list_takes(self):
         return []

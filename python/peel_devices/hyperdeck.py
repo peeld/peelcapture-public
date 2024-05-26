@@ -293,7 +293,11 @@ class HyperDeckDownloadThread(DownloadThread):
 
 class HyperDeck(TcpDevice):
 
-    def __init__(self, name=None, host=None, port=9993):
+    def __init__(self, name="Hyperdeck"):
+
+        super(HyperDeck, self).__init__(name)
+        self.port = 9993
+        self.device_state = "OFFLINE"
 
         self.current_take = None
         self.error = None
@@ -306,9 +310,6 @@ class HyperDeck(TcpDevice):
         self.lines = []
         self.code = None
         self.message = None
-        self.device_state = "OFFLINE"
-
-        super(HyperDeck, self).__init__(name, host, port)
 
     def do_update_state(self, state=None, info=None):
         self.device_state = state
@@ -324,16 +325,47 @@ class HyperDeck(TcpDevice):
 
         # clip_count = int(ret.group(1))
 
+        id_exp = re.compile(r"^([0-9]+):")
+        tc_exp = re.compile(r".*([0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2})$")
+
+        print("Searching for: " + self.play_clip)
+
         for line in self.lines[1:]:
 
-            parts = line.split(' ')
-            if len(parts) != 4:
-                print("Could not parse clip: " + line)
-                continue
+            line = line.strip()
 
-            clip_name = os.path.splitext(parts[1])[0]
+            id_result = id_exp.match(line)
+            if not id_result:
+                print(line)
+                print("Could not get id")
+                continue
+            take_id = id_result.group(1)
+
+            # remove the id from the line
+            line = line[len(take_id)+1:].strip()
+
+            # remove the last timecode from the line
+            tc_result = tc_exp.match(line)
+            if not tc_result:
+                print(line)
+                print("Could not parse timecode 1")
+
+            line = line[:-11].strip()
+
+            # remove the second last timecode from the line
+            tc_result = tc_exp.match(line)
+            if not tc_result:
+                print(line)
+                print("Could not parse timecode 2")
+
+            # What is left should be the take name (may have spaces in it)
+            line = line[:-11].strip()
+
+            # Remove the extension from the filename
+            clip_name = os.path.splitext(line)[0]
+
             if clip_name == self.play_clip:
-                return parts[0]
+                return take_id
 
         return
 
@@ -380,7 +412,6 @@ class HyperDeck(TcpDevice):
 
     def post_stop(self):
         self.send('preview: enable: true\n')
-        self.set_online()
 
     def post_play_loop(self):
         self.command_state = "play-starting"
@@ -492,27 +523,8 @@ class HyperDeck(TcpDevice):
         return "hyperdeck"
 
     @staticmethod
-    def dialog(settings):
-        return AddHyperDeckWidget(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-
-        ret = HyperDeck()
-        if widget.update_device(ret):
-            return ret
-
-    def edit(self, settings):
-        dlg = AddHyperDeckWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
+    def dialog_class():
+        return AddHyperDeckWidget
 
     def has_harvest(self):
         return True

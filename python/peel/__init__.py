@@ -68,6 +68,7 @@ def set_device_data():
     """ Pass the json data for the devices to the main app so it can include it
     when saving the peelcap file at regular intervals (e.g. when hitting record/stop) """
     global DEVICES
+    print("Setting device data")
     cmd.setDeviceData(json.dumps(DEVICES.get_data()))
 
 
@@ -99,7 +100,7 @@ class AddDeviceDialog(QtWidgets.QDialog):
 
         self.device_list = []
         self.current_widget = None
-        self.current_device = None
+        self.current_device_class = None
 
         self.device_list = sorted(DeviceCollection.all_classes(), key=lambda k: k.device())
         for klass in self.device_list:
@@ -162,34 +163,57 @@ class AddDeviceDialog(QtWidgets.QDialog):
         self.show()
 
     def device_select(self, index):
+
+        """ User has selected a device from the combo.  Get the widget from the device to show """
         if index == 0:
             return
 
+        # Remove the previous device
         ret = self.device_widget.layout().takeAt(0)
         if ret is not None:
             ret.widget().deleteLater()
 
-        self.current_device = self.device_list[index-1]
-        self.current_widget = self.current_device.dialog(SETTINGS)
-        if self.current_widget is None:
-            raise RuntimeError("Invalid widget from device")
+        # Get the current selected device class and ask it for the widget class
+        self.current_device_class = self.device_list[index-1]
+        widget_class = self.current_device_class.dialog_class()
+
+        # Create an instance of the widget
+        self.current_widget = widget_class(SETTINGS)
+
+        # Create an instance of the device, so we can get the default values
+        device = self.current_device_class()
+        self.current_widget.populate_from_device(device)
+
+        # Add the widget it to the ui
         self.device_widget.layout().addWidget(self.current_widget)
         self.info_widget.setHtml(self.current_widget.info_text)
 
     def do_add(self):
+
+        """ User has pressed the 'add' button, create the device. """
         if self.current_widget is None:
             return
 
-        device = self.current_device.dialog_callback(self.current_widget)
-        if not device:
-            # dont close the dialog, we can get here when the user puts in an invalid
-            # value and we want to give them the chance to fix it
-            print("Device did not initialize")
+        # Validate the device
+        if not self.current_widget.do_add():
             return
 
+        # Create a device object and populate it using values in the widget
+        device = self.current_device_class()
+        self.current_widget.update_device(device)
+
+        # Add the device to device list
         print("Adding: " + str(device))
         DEVICES.add_device(device)
+
+        # Register all devices with the application
+        # This needs to be done before connect so the status updates by connect work.
         DEVICES.update_all()
+
+        # Start the device - this should update the status
+        device.connect_device()
+
+        device.device_added(self.current_widget)
 
         self.close()
         self.deleteLater()
@@ -232,14 +256,17 @@ def device_info(n):
     if n < 0 or n >= len(DEVICES):
         return
 
+    # Create a dialog
     d = QtWidgets.QDialog(cmd.getMainWindow())
     layout = QtWidgets.QVBoxLayout()
     d.setLayout(layout)
 
-    widget = DEVICES[n].edit(SETTINGS)
-    if widget is None:
-        raise RuntimeError("Invalid widget")
+    device = DEVICES[n]
 
+    # Get the widget class for the dialog
+    klass = device.dialog_class()
+    widget = klass(SETTINGS)
+    widget.populate_from_device(DEVICES[n])
     layout.addWidget(widget)
 
     button = QtWidgets.QPushButton("Okay")
@@ -247,7 +274,13 @@ def device_info(n):
     layout.addWidget(button)
 
     if d.exec_():
-        DEVICES[n].edit_callback(widget)
+        if widget.do_add():
+            widget.update_device(device)
+            cmd.updateDevice(device.device_ref())
+            device.connect_device()
+            device.device_added(widget)
+            d.deleteLater()
+            return
 
     d.deleteLater()
 

@@ -140,6 +140,18 @@ class HueDeviceWidget(BaseDeviceWidget):
         self.settings.setValue("HueIdleColor", self.idle_color.text())
         self.settings.setValue("RecordingOkColor", self.rec_ok_color.text())
 
+        try:
+            phue.Bridge(self.host.text())
+        except phue.PhueRegistrationException as e:
+            msg = "Press the button on the Hue Bridge to connect then close this window."
+            QtWidgets.QMessageBox.information(self, "Hue", msg)
+
+            try:
+                phue.Bridge(self.host.text())
+            except phue.PhueRegistrationException as e:
+                QtWidgets.QMessageBox.information(self, "Hue", "Could not connect to the Hue Bridge")
+                return False
+
         return True
 
 
@@ -148,17 +160,16 @@ class Hue(PeelDeviceBase):
     """ Support for Phillips Hue Lighting
     """
 
-    def __init__(self, name, host, rec_ok_color=None, idle_color=None):
+    def __init__(self, name="Hue"):
         super(Hue, self).__init__(name)
-        self.host = host
+        self.host = "192.168.1.100"
         self.bridge = None
         self.error = None
-        self.rec_ok_color = rec_ok_color
-        self.idle_color = idle_color
-        self.connect_bridge()
+        self.rec_ok_color = None
+        self.idle_color = None
         self.recording = False
 
-    def connect_bridge(self):
+    def connect_device(self):
         self.bridge = phue.Bridge(self.host)
         self.update_state()
         cmd.showLightbulb(True)
@@ -178,9 +189,9 @@ class Hue(PeelDeviceBase):
 
     def reconfigure(self, name, **kwargs):
         self.name = name
-        if 'host' in kwargs: self.host = kwargs['host']
-        if 'idle_color' in kwargs: self.idle_color = kwargs['idle_color']
-        if 'rec_ok_color' in kwargs: self.rec_ok_color = kwargs['rec_ok_color']
+        self.host = kwargs.get('host')
+        self.idle_color = kwargs.get('idle_color')
+        self.rec_ok_color = kwargs['rec_ok_color']
 
     def get_info(self):
 
@@ -275,41 +286,8 @@ class Hue(PeelDeviceBase):
         pass
 
     @staticmethod
-    def dialog(settings):
-        return HueDeviceWidget(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-
-        if not widget.do_add():
-            return
-
-        try:
-            phue.Bridge(widget.host.text())
-        except phue.PhueRegistrationException as e:
-            QtWidgets.QMessageBox.information(widget, "Hue", "Press the button on the Hue Bridge to connect then close this window.")
-
-            try:
-                phue.Bridge(widget.host.text())
-            except phue.PhueRegistrationException as e:
-                QtWidgets.QMessageBox.information(widget, "Hue", "Could not connect to the Hue Bridge")
-                return
-
-        rec_ok_color = widget.rec_ok_color.text()
-        idle_color = widget.idle_color.text()
-        return Hue(widget.name.text(), widget.host.text(), rec_ok_color, idle_color)
-
-    def edit(self, settings):
-        dlg = HueDeviceWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-
-        if not widget.do_add():
-            return
-
-        widget.update_device(self)
+    def dialog_class():
+        return HueDeviceWidget
 
     def has_harvest(self):
         return False

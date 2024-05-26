@@ -90,29 +90,23 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         Sends the packet to a specific host and port.  Use host 255.255.255.255 for broadcast
     """
 
-    def __init__(self, name=None, host=None, port=None, broadcast=None, listen_ip=None, listen_port=None, fmt=None,
-                 set_capture_folder=False, enter_clip_editing=False):
+    def __init__(self, name):
 
         super(XmlUdpDeviceBase, self).__init__(name)
 
-        self.host = host
-        self.port = port
-        self.broadcast = broadcast
-        self.listen_ip = listen_ip
-        self.listen_port = listen_port
-        self.format = fmt
+        self.host = "192.168.1.100"
+        self.port = 1234
+        self.broadcast = None
+        self.listen_ip = None
+        self.listen_port = 1234
+        self.format = None
         self.packet_id = 0
         self.udp = None
         self.listen_thread = None
         self.error = None
         self.recording = False
         self.current_take = None
-        self.set_capture_folder = set_capture_folder
-        self.enter_clip_editing = False
-
-        self.reconfigure(name=name, host=host, port=port, broadcast=broadcast,
-                         listen_ip=listen_ip, listen_port=listen_port, fmt=fmt,
-                         set_capture_folder=set_capture_folder, enter_clip_editing=enter_clip_editing)
+        self.set_capture_folder = False
 
     def as_dict(self):
         return {'name': self.name,
@@ -124,24 +118,27 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
                 'fmt': self.format,
                 'set_capture_folder': self.set_capture_folder}
 
-    def reconfigure(self, name, host=None, port=None, broadcast=None, listen_ip=None, listen_port=None, fmt=None,
-                    set_capture_folder=False, enter_clip_editing=False):
+    def reconfigure(self, name, **kwargs):
+
+        print("XMLUDP Reconfigure")
+        print(str((kwargs)))
+
+        self.name = name
 
         if self.udp is not None:
             self.udp.close()
             self.udp = None
 
         self.current_take = None
-        self.name = name
-        self.host = host
-        self.port = port
-        self.broadcast = broadcast
-        self.listen_ip = listen_ip
-        self.listen_port = listen_port
-        if fmt is not None:
-            self.format = fmt
-        self.set_capture_folder = set_capture_folder
-        self.enter_clip_editing = enter_clip_editing
+        self.host = kwargs.get('host')
+        self.port = kwargs.get('port')
+        self.broadcast = kwargs.get('broadcast')
+        self.listen_ip = kwargs.get('listen_ip')
+        self.listen_port = kwargs.get('listen_port')
+        self.format = kwargs.get('fmt')
+        self.set_capture_folder = kwargs.get('set_capture_folder')
+
+    def connect_device(self):
 
         if self.listen_thread is not None:
             self.listen_thread.kill()
@@ -423,8 +420,10 @@ class AddXmlUdpWidget(peel_devices.SimpleDeviceWidget):
 
 
 class XmlUdpDevice(XmlUdpDeviceBase):
-    def __init__(self, name=None, host=None, port=None, broadcast=None, listen_ip=None, listen_port=None, fmt=None):
-        super(XmlUdpDevice, self).__init__(name, host, port, broadcast, listen_ip, listen_port, fmt=fmt)
+
+    """ A generic device that has a combo box to select the packet format """
+    def __init__(self, name="XmlUdp"):
+        super(XmlUdpDevice, self).__init__(name)
 
     def as_dict(self):
         return {'name': self.name,
@@ -440,23 +439,5 @@ class XmlUdpDevice(XmlUdpDeviceBase):
         return "xmludp"
 
     @staticmethod
-    def dialog(settings, parent=None):
-        return AddXmlUdpWidget(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-        ret = XmlUdpDevice()
-        if widget.update_device(ret):
-            return ret
-
-    def edit(self, settings):
-        dlg = AddXmlUdpWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
+    def dialog_class():
+        return AddXmlUdpWidget

@@ -20,17 +20,14 @@
 
 #pragma once
 
-typedef void (*TimecodeFunc)(void*, int, int, int, int, float, bool);
-typedef void (*StateFunc)(void*, const char*, const char*);
-typedef void (*SubjectFunc)(void*, const char**);
-typedef void (*LogFunc)(void*, const char*);
 
 struct PluginCallbacks
 {
-    StateFunc state;
-    TimecodeFunc timecode;
-    SubjectFunc subject;
-    LogFunc log;
+    std::function<void(void*, int, int, int, int, float, bool)> timecode;
+    std::function<void(void*, const char*, const char*)> state;
+    std::function<void(void*, const char**, int)> subject;
+    std::function<void(void*, const char **, int)> prop;
+    std::function<void(void*, const char*)> log;
 };
 
 /* plugins must implement:
@@ -47,19 +44,33 @@ extern "C" PEEL_PLUGIN_API void getIdentifier(char *buf, size_t len) {
 
 */
 
+struct State
+{
+    std::string state;
+    std::string info;
+    bool enabled;
+};
+
 class PEEL_PLUGIN_API PeelCapDeviceInterface {
 public:
-    PeelCapDeviceInterface() : cb({ nullptr, nullptr, nullptr }) {};
-    virtual ~PeelCapDeviceInterface() {};
+    PeelCapDeviceInterface() 
+        : cb({ nullptr, nullptr, nullptr }) 
+        , states(new State())        
+    {};
+    virtual ~PeelCapDeviceInterface() {
+        delete states;
+    };
 
     // App modifying device
     virtual bool reconfigure(const char*) = 0;
     virtual void teardown() = 0;
     virtual bool command(const char*, const char*) = 0;
-    virtual void setEnabled(bool) = 0;
-    virtual bool getEnabled() = 0;
-    virtual const char* getInfo() = 0;
-    virtual const char* getState() = 0;
+    virtual void setEnabled(bool value) { this->states->enabled = value; }
+    virtual bool getEnabled() { return this->states->enabled; }
+    virtual const char* getInfo() { return this->states->info.c_str(); }
+    virtual const char* getState() { return this->states->state.c_str(); }
+    virtual void setState(const char* value) { this->states->state = value;  }
+    virtual void setInfo(const char* value) { this->states->info = value;  }
     virtual const char* pluginCommand(const char *) = 0;
 
     // Device updating app state
@@ -70,6 +81,8 @@ public:
 
     // Send up an status update to the app
     void updateState(const char* state, const char* info) {
+        this->states->state = state;
+        this->states->info = info;
         if (cb.state)
             cb.state(this, state, info);
     }
@@ -81,9 +94,16 @@ public:
     };
 
     // Send current subjects to the app
-    void subjects(const char** subjects) {
+    void subjects(const char** subjects, int count) {
         if (cb.subject) {
-            cb.subject(this, subjects);
+            cb.subject(this, subjects, count);
+        }
+    }
+
+    // Send current subjects to the app
+    void props(const char** prop, int count) {
+        if (cb.prop) {
+            cb.prop(this, prop, count);
         }
     }
 
@@ -93,6 +113,10 @@ public:
             cb.log(this, msg);
         }
     }
+
+private:
+    State* states;
+
 };
 
 #ifdef _WIN32

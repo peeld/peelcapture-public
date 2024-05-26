@@ -259,15 +259,15 @@ class KiPro(PeelDeviceBase):
     eProgressStartBenchmark = 2
     eProgressStartRecordFlush = 3
 
-    def __init__(self, name=None, host=None, prefix_device_name=None):
+    def __init__(self, name="KiPro"):
         super(KiPro, self).__init__(name)
-        self.host = host
+        self.host = "192.168.1.100"
         self.error = None
         self.downloading = False
         self.message = None
         self.next_play = 0
         self.fp = None
-        self.prefix_device_name = prefix_device_name
+        self.prefix_device_name = False
 
     @staticmethod
     def device():
@@ -276,7 +276,12 @@ class KiPro(PeelDeviceBase):
     def as_dict(self):
         return {'name': self.name,
                 'host': self.host,
-                'prefix_device_name': self.prefix_device_name }
+                'prefix_device_name': self.prefix_device_name}
+
+    def reconfigure(self, name, **kwargs):
+        self.name = name
+        self.host = kwargs.get("host", None)
+        self.prefix_device_name = kwargs.get("prefix_device_name", False)
 
     def __str__(self):
         msg = self.name
@@ -286,6 +291,9 @@ class KiPro(PeelDeviceBase):
 
     def teardown(self):
         pass
+
+    def connect_device(self):
+        self.query_state_delayed()
 
     def query_state_delayed(self):
         """ update the current device state after a short delay to allow a command to complete """
@@ -550,33 +558,8 @@ class KiPro(PeelDeviceBase):
         return KiProDownloadThread(self, directory, all_files)
 
     @staticmethod
-    def dialog(settings):
-        return KiProDialog(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-
-        if not widget.do_add():
-            return
-
-        device = KiPro()
-        widget.update_device(device)
-        return device
-
-    def edit(self, settings):
-        dlg = KiProDialog(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
-
-    def reconfigure(self, name, **kwargs):
-        self.name = name
-        self.host = kwargs.get("host", None)
-        self.prefix_device_name = kwargs.get("prefix_device_name", False)
+    def dialog_class():
+        return KiProDialog
 
     def list_takes(self):
         return []

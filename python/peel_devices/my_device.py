@@ -1,11 +1,12 @@
 from PeelApp import cmd
 from peel_devices import SimpleDeviceWidget, PeelDeviceBase
-import json
+
 
 class MyDeviceWidget(SimpleDeviceWidget):
     def __init__(self, settings):
         super(MyDeviceWidget, self).__init__(settings, "AxisStudio", has_host=False, has_port=False,
                                              has_broadcast=False, has_listen_ip=False, has_listen_port=False)
+
 
 class MyDevice(PeelDeviceBase):
 
@@ -36,6 +37,9 @@ class MyDevice(PeelDeviceBase):
         cmd.configureDevice(self.plugin_id, "DATA")
         cmd.setDeviceEnabled(self.plugin_id, self.enabled)
 
+    def connect_device(self):
+        pass
+
     def teardown(self):
         cmd.deleteDevice(self.plugin_id)
 
@@ -55,27 +59,8 @@ class MyDevice(PeelDeviceBase):
         return ""
 
     @staticmethod
-    def dialog(settings):
-        return MyDeviceWidget(settings)
-
-    @staticmethod
-    def dialog_callback(widget):
-        if not widget.do_add():
-            return
-
-        ret = MyDevice()
-        if widget.update_device(ret):
-            return ret
-
-    def edit(self, settings):
-        dlg = MyDeviceWidget(settings)
-        dlg.populate_from_device(self)
-        return dlg
-
-    def edit_callback(self, widget):
-        if not widget.do_add():
-            return
-        widget.update_device(self)
+    def dialog_class():
+        return MyDeviceWidget
 
     def has_harvest(self):
         return False
