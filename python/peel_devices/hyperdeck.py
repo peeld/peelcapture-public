@@ -180,7 +180,7 @@ import re
 
 class AddHyperDeckWidget(SimpleDeviceWidget):
     def __init__(self, settings):
-        super(AddHyperDeckWidget, self).__init__(settings, "Hyperdeck", has_host=True, has_port=False,
+        super(AddHyperDeckWidget, self).__init__(settings, "Hyperdeck", has_host=True, has_port=True,
                                                  has_broadcast=False, has_listen_ip=False, has_listen_port=False)
 
         link = 'https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-hyperdeck/'
@@ -296,6 +296,7 @@ class HyperDeck(TcpDevice):
     def __init__(self, name="Hyperdeck"):
 
         super(HyperDeck, self).__init__(name)
+        self.host = "192.168.1.100"
         self.port = 9993
         self.device_state = "OFFLINE"
 

@@ -182,12 +182,12 @@ class SocketThread(QtCore.QThread):
 
             print('DATA: ' + hex(header_value[1]) + ' ' + hex(header_value[2]))
 
-            if header_value[1] == 0x0005:
+            if header_value[1] == 0x4001:
                 self.recording_flag = True
                 print("Recording confirmed")
                 self.state_change.emit()
 
-            if header_value[1] == 0x0006:
+            if header_value[1] == 0x4002:
                 self.recording_flag = False
                 print("Stop confirmed")
                 self.state_change.emit()
@@ -283,6 +283,9 @@ class PeelRecorder(PeelDeviceBase):
          """
 
         if not self.enabled:
+            return "OFFLINE"
+
+        if not self.tcp:
             return "OFFLINE"
 
         if not self.tcp.active_flag:

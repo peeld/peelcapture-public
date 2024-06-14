@@ -25,7 +25,7 @@ class IClone(PeelDeviceBase):
 
     @staticmethod
     def device():
-        return "IClone"
+        return "iclone"
 
     def as_dict(self):
         return {'name': self.name, 'host': self.host}

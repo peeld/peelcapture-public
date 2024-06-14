@@ -40,8 +40,6 @@ extern "C" PEEL_PLUGIN_API void getIdentifier(char *buf, size_t len) {
     snprintf(buf, len, "MyDevice");
 }
 
-}
-
 */
 
 struct State
@@ -50,6 +48,7 @@ struct State
     std::string info;
     bool enabled;
 };
+
 
 class PEEL_PLUGIN_API PeelCapDeviceInterface {
 public:
@@ -125,6 +124,7 @@ typedef const char* (__cdecl* plugin_identifier_ptr)();
 #else
 typedef PeelCapDeviceInterface* (*plugin_entry_ptr)();
 typedef const char* (*plugin_identifier_ptr)();
+
 #endif
 
 

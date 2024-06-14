@@ -620,6 +620,7 @@ class TcpDevice(PeelDeviceBase):
         self.update_state(self.connected_state, "")
 
     def do_error(self, err):
+        print("ERROR", str(err))
         self.connected_state = "ERROR"
         if err == QAbstractSocket.ConnectionRefusedError:
             self.update_state(self.connected_state, "Connection Refused")
@@ -705,8 +706,6 @@ class TcpDevice(PeelDeviceBase):
         self.tcp.readyRead.connect(self.do_read)
         self.tcp.errorOccurred.connect(self.do_error)
         self.tcp.connectToHost(self.host, self.port)
-
-        self.update_state()
 
     def get_state(self):
 

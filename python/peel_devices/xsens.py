@@ -51,7 +51,7 @@ class XSens(XmlUdpDeviceBase):
                 'port': self.port,
                 'broadcast': self.broadcast,
                 'listen_ip': self.listen_ip,
-                'listen_port': self.listen_port }
+                'listen_port': self.listen_port}
 
     @staticmethod
     def device():

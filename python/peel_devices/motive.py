@@ -80,7 +80,7 @@ class MotiveDialog(BaseDeviceWidget):
 
         self.set_capture_folder = QtWidgets.QCheckBox()
         self.set_capture_folder.setChecked(self.settings.value("MotiveSetCaptureFolder") == "True")
-        self.form_layout.addRow("MotiveSetCaptureFolder", self.set_capture_folder)
+        self.form_layout.addRow("Motive", self.set_capture_folder)
 
         link = "https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-optitrack-motive/"
         msg = '<P><A HREF="' + link + '">Documentation</P>'
@@ -190,9 +190,6 @@ class OptitrackMotive(PeelDeviceBase):
         self.subjects = kwargs.get('subjects')
         self.set_capture_folder = kwargs.get('set_capture_folder')
 
-    def connect_motive(self):
-
-        print("Connecting to Motive")
         cmd.writeLog(f"Connection Type: {self.connection_type}")
         cmd.writeLog(f"Command Port: {self.command_port}")
         cmd.writeLog(f"Data Port: {self.data_port}")
@@ -214,8 +211,8 @@ class OptitrackMotive(PeelDeviceBase):
             config += f"serverAddress={self.server_address}\n"
             config += f"localAddress={self.local_address}\n"
             config += f"multicastAddress={self.multicast_address}\n"
-            config += f"subjects={self.subjects}\n"
-            config += f"timecode={self.timecode}\n"
+            config += f"subjects={ int(self.subjects) }\n"
+            config += f"timecode={ int(self.timecode) }\n"
 
             cmd.configureDevice(self.plugin_id, config)
 
