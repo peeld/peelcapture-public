@@ -263,6 +263,7 @@ class PeelRecorder(PeelDeviceBase):
         if self.tcp:
             self.tcp.tcp_disconnect()
             self.tcp.stop_thread()
+            self.tcp.wait()
             self.tcp = None
 
     def as_dict(self):

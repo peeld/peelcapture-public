@@ -566,16 +566,10 @@ class DeviceCollection(QtCore.QObject):
                     continue
 
                 try:
-                    print("Device: " + str(class_name))
                     device = klass[class_name](name=device_data['name'])
-                    print("Adding")
                     self.add_device(device)  # Adds to self.device only
-                    print("Configure")
-                    print(device_data)
                     device.reconfigure(**device_data)
-                    print("Connecting")
                     device.connect_device()
-                    print("Done")
 
                 except TypeError as e:
                     print("Error recreating class: " + str(class_name))

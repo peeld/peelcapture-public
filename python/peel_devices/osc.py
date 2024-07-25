@@ -219,6 +219,11 @@ class Osc(peel_devices.PeelDeviceBase):
         pass
 
     def client_send(self, cmd, arg):
+
+        if self.client is None:
+            print("Osc client not set when sending")
+            return
+
         try:
             print(f"OSC: {cmd} {arg}")
             self.client.send_message(cmd, arg)

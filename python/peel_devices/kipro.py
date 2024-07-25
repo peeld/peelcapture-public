@@ -68,13 +68,24 @@ class KiProDialog(SimpleDeviceWidget):
         return True
 
 
-class Downloader(object):
+class Downloader:
     def __init__(self, url, outfile):
+        self.url = url
         self.outfile = outfile
-        self.src = urllib.request.urlopen(url, timeout=1)
-        self.total = int(self.src.getheader("Content-Length"))
+        self.src = None
         self.dest = None
         self.read = 0
+        self.total = 0
+        self.initialize_download()
+
+    def initialize_download(self):
+        try:
+            print("Opening:", self.url)
+            self.src = urllib.request.urlopen(self.url, timeout=10)
+            self.total = int(self.src.getheader("Content-Length"))
+        except Exception as e:
+            print(f"Error opening URL: {e}")
+            raise
 
     def exists(self):
         if not os.path.isfile(self.outfile):
@@ -86,43 +97,56 @@ class Downloader(object):
 
         # Rename the existing file that is the wrong size
         for i in range(100):
-            if not os.path.isfile(self.outfile + "_" + str(i)):
-                altname = self.outfile + "_" + str(i)
-                cmd.writeLog(f"Ki Pro rename {self.outfile} to {altname}")
+            altname = f"{self.outfile}_{i}"
+            if not os.path.isfile(altname):
+                print(f"Renaming {self.outfile} to {altname}")
                 os.rename(self.outfile, altname)
                 return False
 
-        return True
+        return False
 
     def close(self):
         if self.dest:
             self.dest.close()
         if self.src:
             self.src.close()
+        print("Closing download streams.")
+        print("Finished: ", self.outfile)
 
     def tick(self):
-
         if self.dest is None:
-            self.dest = open(self.outfile, "wb")
-            if not self.dest:
+            try:
+                print("Writing to ", self.outfile)
+                self.dest = open(self.outfile, "wb")
+            except Exception as e:
+                print(f"Error opening file for writing: {e}")
+                self.close()
                 return False
 
-        data = self.src.read(10240)
-        if not data:
+        try:
+            data = self.src.read(10240)
+            if not data:
+                self.close()
+                return False
+            self.dest.write(data)
+            self.read += len(data)
+        except Exception as e:
+            print(f"Error during download: {e}")
             self.close()
             return False
-        self.dest.write(data)
-        self.read += len(data)
+
         return True
 
     def progress(self):
-        return float(self.read) / float(self.total)
+        if self.total > 0:
+            return float(self.read) / float(self.total)
+        return 0.0
 
 
 class KiProDownloadThread(DownloadThread):
 
     def __init__(self, kipro, directory, all_files):
-        super(KiProDownloadThread, self).__init__()
+        super().__init__()
         self.kipro = kipro
         self.directory = directory
         self.incomplete = None
@@ -133,102 +157,112 @@ class KiProDownloadThread(DownloadThread):
         self.all_files = all_files
 
     def __str__(self):
-        return str(self.kipro) + " Downloader"
+        return f"{self.kipro} Downloader"
 
     def run(self):
-
-        cmd.writeLog(str(self) + " - downloading\n")
-
+        cmd.writeLog(f"{self} - downloading\n")
         self.set_started()
 
         if not os.path.isdir(self.directory):
             os.mkdir(self.directory)
 
         try:
-            # switch device to data lan so we can download files.
             self.kipro.datalan()
-
-            take_list = [format_take_name(i).lower() for i in cmd.takes()]
-            self.clips = []
-
-            for clip in self.kipro.clips():
-                if self.all_files:
-                    self.clips.append(FileItem(clip['clipname'], clip['clipname']))
-                else:
-                    name = format_take_name(clip["clipname"]).lower()
-                    found = False
-                    for take in take_list:
-                        if self.kipro.prefix_device_name:
-                            take = f"{self.kipro.name}-{take}"
-                        if name.startswith(take.lower()):
-                            found = True
-                            break
-                    if found:
-                        self.clips.append(FileItem(clip['clipname'], clip['clipname']))
-
-            for self.current_i in range(len(self.clips)):
-                self.current_clip = self.clips[self.current_i]
-                self.set_current(self.current_clip.local_file)
-
-                if not self.is_running():
-                    break
-
-                this_name = str(self.kipro) + ":" + self.current_clip.local_file
-
-                out = os.path.join(self.directory, self.current_clip.local_file)
-
-                try:
-                    self.tick.emit(float(self.current_i) / float(len(self.clips)))
-                    self.message.emit(self.current_clip.remote_file)
-                    url = "http://" + self.kipro.host + "/media/" + urllib.parse.quote(self.current_clip.remote_file)
-                    self.message.emit(url)
-                    self.downloader = Downloader(url, out)
-                    if self.downloader.exists():
-                        self.file_skip(this_name)
-                        self.downloader.close()
-                        # Throttle requests, ki pro doesn't like too many requests happening quickly.
-                        time.sleep(0.2)
-                        continue
-
-                    mod = 0
-                    while self.is_running() and self.downloader.tick():
-                        if mod > 10:
-                            if self.current_i is None or not self.clips:
-                                mod = 0
-                                continue
-
-                            major = float(self.current_i) / float(len(self.clips))
-                            minor = 0.0
-                            if self.downloader is not None:
-                                minor = float(self.downloader.progress()) / float(len(self.clips))
-
-                            self.tick.emit(major + minor)
-                            mod = 0
-                        else:
-                            mod += 1
-
-                    if self.downloader.read != self.downloader.total:
-                        self.current_clip.error = "Incomplete download"
-                        cmd.writeLog(f"Ki Pro Incomplete Download: {self.downloader.read} of {self.downloader.total}\n")
-                        os.unlink(out)
-                        self.file_fail(this_name, "Incomplete Download")
-                    else:
-                        self.current_clip.complete = True
-                        self.file_ok(this_name)
-                except IOError as e:
-                    cmd.writeLog("Ki Pro Download Error: " + str(e) + "\n")
-                    self.current_clip.error = str(e)
-                    self.file_fail(this_name, str(e))
-
+            self.prepare_clips()
+            self.download_clips()
         finally:
-            self.message.emit("ki pro finishing")
-            self.set_finished()
+            self.cleanup()
 
+    def prepare_clips(self):
+        take_list = [format_take_name(i).lower() for i in cmd.takes()]
+        self.clips = []
+
+        for clip in self.kipro.clips():
+            if self.all_files or self.is_clip_in_takes(clip['clipname'], take_list):
+                self.clips.append(FileItem(clip['clipname'], clip['clipname']))
+
+    def is_clip_in_takes(self, clipname, take_list):
+        name = format_take_name(clipname).lower()
+        for take in take_list:
+            if self.kipro.prefix_device_name:
+                take = f"{self.kipro.name}-{take}"
+            if name.startswith(take):
+                return True
+        return False
+
+    def download_clips(self):
+        for self.current_i, self.current_clip in enumerate(self.clips):
+            if not self.is_running():
+                break
+
+            self.set_current(self.current_clip.local_file)
+            out = os.path.join(self.directory, self.current_clip.local_file)
+
+            try:
+                self.tick.emit(float(self.current_i) / float(len(self.clips)))
+                url = self.get_clip_url(self.current_clip.remote_file)
+                self.downloader = Downloader(url, out)
+
+                if self.downloader.exists():
+                    self.file_skip(str(self.kipro) + ":" + self.current_clip.local_file)
+                    self.downloader.close()
+                    time.sleep(0.2)
+                    continue
+
+                self.perform_download(out)
+
+            except IOError as e:
+                self.handle_download_error(e, out)
+
+    def get_clip_url(self, remote_file):
+        url = f"http://{self.kipro.host}/media/{urllib.parse.quote(remote_file)}"
+        self.message.emit(remote_file)
+        self.message.emit(url)
+        return url
+
+    def perform_download(self, out):
+        mod = 0
+        while self.is_running() and self.downloader.tick():
+            if mod > 10:
+                self.update_progress(mod)
+                mod = 0
+            else:
+                mod += 1
+
+        if self.downloader.read != self.downloader.total:
+            self.handle_incomplete_download(out)
+        else:
+            self.current_clip.complete = True
+            self.file_ok(str(self.kipro) + ":" + self.current_clip.local_file)
+
+        # Ki pro crashes without this
+        time.sleep(1.0)
+
+    def update_progress(self, mod):
+        if self.current_i is None or not self.clips:
+            return
+
+        major = float(self.current_i) / float(len(self.clips))
+        minor = float(self.downloader.progress()) / float(len(self.clips))
+        self.tick.emit(major + minor)
+
+    def handle_incomplete_download(self, out):
+        self.current_clip.error = "Incomplete download"
+        cmd.writeLog(f"Ki Pro Incomplete Download: {self.downloader.read} of {self.downloader.total}\n")
+        self.file_fail(str(self.kipro) + ":" + self.current_clip.local_file, "Incomplete Download")
+
+    def handle_download_error(self, error, out):
+        cmd.writeLog(f"Ki Pro Download Error: {error}\n")
+        self.current_clip.error = str(error)
+        self.file_fail(str(self.kipro) + ":" + self.current_clip.local_file, str(error))
+
+    def cleanup(self):
+        self.message.emit("ki pro finishing")
+        self.set_finished()
         try:
             self.kipro.recplay()
         except Exception as e:
             cmd.writeLog(f"{self} - could not set ki pro to recplay: {e}\n")
-
         self.message.emit("KI PRO THREAD DONE")
 
 
@@ -301,6 +335,8 @@ class KiPro(PeelDeviceBase):
         QtCore.QTimer.singleShot(500, self.update_state)
 
     def get_state(self):
+
+        print("STATE")
 
         """ called via update_state() - do not call update_state or device_ref here """
 
@@ -405,8 +441,8 @@ class KiPro(PeelDeviceBase):
         try:
             url = "http://" + self.host + "/config?" + urllib.parse.urlencode(params)
             cmd.writeLog(url + "\n")
-            f = urllib.request.urlopen(url, timeout=1)
-            return f.read()
+            with urllib.request.urlopen(url, timeout=1) as f:
+                return f.read()
         except Exception as e:
             print("KI PRO ERROR: " + str(e))
             return None

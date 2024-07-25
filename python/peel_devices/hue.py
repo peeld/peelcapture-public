@@ -170,9 +170,12 @@ class Hue(PeelDeviceBase):
         self.recording = False
 
     def connect_device(self):
-        self.bridge = phue.Bridge(self.host)
-        self.update_state()
-        cmd.showLightbulb(True)
+        try:
+            self.bridge = phue.Bridge(self.host)
+            self.update_state()
+            cmd.showLightbulb(True)
+        except phue.PhueRequestTimeout:
+            self.update_state("OFFLINE", "")
 
     @staticmethod
     def device():
@@ -215,7 +218,7 @@ class Hue(PeelDeviceBase):
             return "OFFLINE"
 
         if self.bridge is None:
-            return "ERROR"
+            return "OFFLINE"
         else:
             if self.recording:
                 return "RECORDING"

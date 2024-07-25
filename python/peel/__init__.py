@@ -68,7 +68,6 @@ def set_device_data():
     """ Pass the json data for the devices to the main app so it can include it
     when saving the peelcap file at regular intervals (e.g. when hitting record/stop) """
     global DEVICES
-    print("Setting device data")
     cmd.setDeviceData(json.dumps(DEVICES.get_data()))
 
 

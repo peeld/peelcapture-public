@@ -389,6 +389,12 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
 
         self.packet_id += 1
 
+    def thread_join(self):
+        pass
+
+    def has_harvest(self):
+        return False
+
 
 class AddXmlUdpWidget(peel_devices.SimpleDeviceWidget):
     def __init__(self, settings):
@@ -422,6 +428,7 @@ class AddXmlUdpWidget(peel_devices.SimpleDeviceWidget):
 class XmlUdpDevice(XmlUdpDeviceBase):
 
     """ A generic device that has a combo box to select the packet format """
+
     def __init__(self, name="XmlUdp"):
         super(XmlUdpDevice, self).__init__(name)
 
