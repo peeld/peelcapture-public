@@ -82,10 +82,10 @@ class MotiveDialog(BaseDeviceWidget):
         self.set_capture_folder.setChecked(self.settings.value("MotiveSetCaptureFolder") == "True")
         self.form_layout.addRow("Set Capture Folder", self.set_capture_folder)
 
-        link = "https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-optitrack-motive/"
-        msg = '<P><A HREF="' + link + '">Documentation</P>'
-        msg += '<P>Motive settings are configured in PeelCapture<BR>File->Settings->Motive(tab)</P>'
-        self.set_info(msg)
+        #link = "https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-optitrack-motive/"
+        #msg = '<P><A HREF="' + link + '">Documentation</P>'
+        #msg += '<P>Motive settings are configured in PeelCapture<BR>File->Settings->Motive(tab)</P>'
+        self.set_info("Add a Naturalpoint Motion Device")
 
         self.setLayout(self.form_layout)
 

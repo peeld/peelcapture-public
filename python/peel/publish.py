@@ -27,7 +27,8 @@ import msvcrt
 
 
 def wrapshoot(file):
-    """ Called when a user selects "wrap shoot" from the file menu
+    """ Called when a user selects "wrap shoot" from the file menu.
+    The file will be locked after this is called (windows only)
     @param file: the current peelcap file
     """
 

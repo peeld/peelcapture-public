@@ -303,14 +303,16 @@ class HyperDeck(TcpDevice):
         self.current_take = None
         self.error = None
         self.command_state = "init"
+        self.command_queue = None
         self.response_state = None
-        self.line_parser = "status"
         self.line_state = None
         self.play_clip = None
         self.multi_line = False
         self.lines = []
         self.code = None
         self.message = None
+        self.speed = 100
+        self.clip_id = None
 
     def do_update_state(self, state=None, info=None):
         self.device_state = state
@@ -366,9 +368,8 @@ class HyperDeck(TcpDevice):
             clip_name = os.path.splitext(line)[0]
 
             if clip_name == self.play_clip:
+                print(f"Using id: {take_id}" )
                 return take_id
-
-        return
 
     def do_read(self):
         data = self.tcp.readAll().data().decode("utf8")
@@ -376,6 +377,8 @@ class HyperDeck(TcpDevice):
         for line in data.split("\n"):
 
             line = line.strip()
+
+            print(">", line)
 
             if self.multi_line:
                 # keep reading lines of a multi line command until we get to a blank line
@@ -431,12 +434,12 @@ class HyperDeck(TcpDevice):
             return True
 
         if self.code == "500" or self.code == "200":
-            if self.command_state == "recording":
+            if self.command_state == "record":
                 self.do_update_state("RECORDING", "")
                 self.advance()
                 return
 
-            if self.command_state == "play-ok":
+            if self.command_state == "play":
                 self.do_update_state("PLAYING", "Playing")
                 self.advance()
                 return
@@ -445,52 +448,82 @@ class HyperDeck(TcpDevice):
             self.advance()
             return
 
-        if self.command_state == "play-ls":
-            if self.code == "205" and len(self.lines) > 0:
-                self.advance()
-            else:
-                self.do_update_state("ERROR", "Error playing")
+        #if self.command_state == "play":
+        #    if self.code == "205" and len(self.lines) > 0:
+        #        self.advance()
+        #    else:
+        #        self.do_update_state("ERROR", "Error playing")
+        #    return
+
+        if self.code == "205" and self.command_state == "ls":
+            print("205 when getting clips, this is normal")
+            self.advance()
             return
 
-        #print(f"{self.line_parser}:{self.command_state} - {self.code} {self.message}")
+        self.do_update_state("ERROR", self.command_state)
+
+        print(f"{self.command_state} - {self.code} {self.message}")
         #for i in self.lines:
         #    print("  " + i)
 
+    def enqueue(self, commands):
+        if isinstance(commands, str):
+            self.command_queue = None
+            self.run_action(commands)
+            return
+
+        self.command_queue = commands
+        self.run_action(self.command_queue.pop())
+
     def advance(self):
+
+        print(f"Advance {self.command_state}")
+        print(str(self.command_queue))
 
         if self.command_state is None:
             return
 
-        clip_id = ''
-
-        if self.command_state == "play-ls":
-            clip_id = self.get_play_clip_id()
-            if clip_id is None:
+        if self.command_state == "ls":
+            self.clip_id = self.get_play_clip_id()
+            if self.clip_id is None:
                 self.do_update_state("ERROR", "Could not find clip")
                 return
-            print("CLIP ID: " + str(clip_id))
+            print("CLIP ID: " + str(self.clip_id))
 
-        states = [('init',       None,                                    None),
-                  ('record',    f"record: name: {self.current_take}\n",   "recording"),
-                  ('recording',  None,                                    None),
-                  ('stop',      "stop\n",                                 "stopping"),
-                  ('stopping',  "preview: enable: true\n",                None),
-                  ('play',      "clips get\n",                            "play-ls"),
-                  ('play-ls',   "playrange set: clip id: " + clip_id + "\n",       "play-goto"),
-                  ('play-goto', "goto: clip: start\n",                        "play-single"),
-                  ('play-single', "play: loop: true\n",                   "play-ok"),
-                  ('play-ok',    None,                                    None),
-                  ]
+        # Send the next command in the queue
+        if self.command_queue:
+            self.run_action(self.command_queue.pop(0))
 
-        for current, message, nextstate in states:
-            if self.command_state == current:
-                self.command_state = nextstate
-                if message is not None:
-                    self.send(message)
-                return
+    def run_action(self, command):
+        print(f"RUNNING ACTION {command}")
+        self.command_state = command
+        if command == "record":
+            self.send(f"record: name: {self.current_take}\n")
+            return
 
-        print("EXIT FROM HYPERDECK ADVANCE WITHOUT CHANGING STATE")
-        print("STATE: " + str(self.command_state))
+        if command == "stop":
+            self.send("stop\n")
+            return
+
+        if command == "preview-enable":
+            self.send("preview: enable: true\n")
+            return
+
+        if command == "ls":
+            self.send("clips get\n")
+            return
+
+        if command == "set-clip":
+            self.send(f"playrange set: clip id: {self.clip_id}\n")
+            return
+
+        if command == "goto-start":
+            self.send("goto: clip: start\n")
+            return
+
+        if command == "play":
+            self.send(f"play: loop: true speed: {self.speed}\n")
+            return
 
     def command(self, command, arg):
 
@@ -499,23 +532,47 @@ class HyperDeck(TcpDevice):
 
         self.command_state = command
 
+        # The commands being cued here are actions not literal strings to be sent
+        # They are intepreted by send_line, with additional encoding or parameters if needed.
+
         if command == "record":
             self.current_take = arg
-            self.line_parser = "status"
-            self.advance()
+            self.enqueue("record")
             return
 
         if command == "stop":
             self.play_clip = None
-            self.line_parser = "status"
-            self.advance()
+            self.enqueue(["stop", "preview-enable"])
             return
 
         if command == "play":
-            self.line_parser = "status"
             self.play_clip = arg
-            self.advance()
+            self.speed = 100
+            self.enqueue(["ls", "set-clip", "goto-start", "play"])
             return None
+
+        if command == "pause":
+
+            if arg == "on":
+                self.speed = 0
+
+            if arg == "off":
+                self.speed = 100
+
+            self.enqueue("play")
+
+            return
+
+        if command == "move":
+            speed_value = int(arg)
+            if speed_value < 0:
+                self.speed = speed_value * 50
+            if speed_value == 0:
+                self.speed = 100
+            if speed_value > 0:
+                self.speed = (speed_value + 1) * 50
+            self.enqueue("play")
+            return
 
         print(f"{self.name} ignored the command: {command} {arg}")
 

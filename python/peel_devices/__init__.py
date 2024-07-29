@@ -599,7 +599,7 @@ class TcpDevice(PeelDeviceBase):
     def send(self, msg):
         #if self.connected_state != "CONNECTED":
         #    self.tcp.connectToHost(self.host, self.port)
-        print(msg)
+        print(msg.strip())
         self.tcp.write(msg.encode("utf8"))
 
     def do_read(self):
