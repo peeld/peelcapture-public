@@ -95,8 +95,7 @@ class OscListenThreadReaper(OscListenThread):
             return
 
         # Skip common reaper commands from spamming the log
-        if "/vu" in args[0] or args[0].startswith("/time") or args[0].startswith('/samples') or \
-                args[0].startswith('/beat'):
+        if "/vu" in args[0] or args[0].startswith("/time") or args[0].startswith('/samples') or args[0].startswith('/beat'):
             return
 
         self.state_changed.emit("ONLINE")
@@ -219,20 +218,21 @@ class Osc(peel_devices.PeelDeviceBase):
         pass
 
     def client_send(self, cmd, arg):
-
         if self.client is None:
-            print("Osc client not set when sending")
+            print("Error: OSC client is not initialized")
             return
-
+        
         try:
             print(f"OSC: {cmd} {arg}")
             self.client.send_message(cmd, arg)
         except OSError as e:
             self.on_state("ERROR")
-            raise e
+            print(f"OSError: {e}")
         except OverflowError as e:
             self.on_state("ERROR")
-            raise e
+            print(f"OverflowError: {e}")
+        except Exception as e:
+            print(f"Unexpected error in client_send: {e}")
 
     def command(self, command, argument):
         raise NotImplementedError
@@ -373,6 +373,8 @@ class Unreal(Osc):
         return super(Unreal, self).get_state()
 
     def command(self, command, argument):
+        if not self.client:
+            self.device_connect()
         if command == "stop":
             # Stop recording
             self.is_recording = False
