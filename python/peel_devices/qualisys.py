@@ -79,8 +79,7 @@ class QualisysDeviceDialog(BaseDeviceWidget):
         host = self.host.text()
         password = self.password.text()
 
-        device.reconfigure(name, host=host, password=password)
-        return True
+        return device.reconfigure(name, host=host, password=password)
 
     def do_add(self):
         if not super().do_add():
@@ -112,6 +111,7 @@ class QualisysDevice(PeelDeviceBase):
         self.name = name
         self.host = kwargs['host']
         self.password = kwargs['password']
+        return True
 
     def connect_device(self):
 

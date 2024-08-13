@@ -50,6 +50,7 @@ class Rokoko(XmlUdpDeviceBase):
     def reconfigure(self, name, **kwargs):
         super().reconfigure(name, **kwargs)
         self.enter_clip_editing = kwargs.get('enter_clip_editing')
+        return True
 
     @staticmethod
     def device():

@@ -109,17 +109,23 @@ class MotiveDialog(BaseDeviceWidget):
         if data is None:
             data = {}
 
-        data['connection_type'] = self.connection_type.currentText()
-        data['command_port'] = int(self.command_port.text())
-        data['data_port'] = int(self.data_port.text())
-        data['server_address'] = self.server_address.text()
-        data['local_address'] = self.local_address.text()
-        data['multicast_address'] = self.multicast_address.text()
-        data['timecode'] = self.timecode.isChecked()
-        data['subjects'] = self.subjects.isChecked()
-        data['set_capture_folder'] = self.set_capture_folder.isChecked()
+        try:
+            data['connection_type'] = self.connection_type.currentText()
+            data['command_port'] = int(self.command_port.text())
+            data['data_port'] = int(self.data_port.text())
+            data['server_address'] = self.server_address.text()
+            data['local_address'] = self.local_address.text()
+            data['multicast_address'] = self.multicast_address.text()
+            data['timecode'] = self.timecode.isChecked()
+            data['subjects'] = self.subjects.isChecked()
+            data['set_capture_folder'] = self.set_capture_folder.isChecked()
+        except ValueError:
+            QtWidgets.QMessageBox.warning(self, "Error", "Invalid data")
+            return False
 
-        device.reconfigure(name, **data)
+        return device.reconfigure(name, **data)
+
+
 
     def do_add(self):
 
@@ -200,6 +206,7 @@ class OptitrackMotive(PeelDeviceBase):
         cmd.writeLog(f"Subjects: {self.subjects}")
         cmd.writeLog(f"Set Capture Folder: {self.set_capture_folder}")
 
+        config = ""
         try:
             if self.connection_type == "Multicast":
                 config = "multicast=1\n"
@@ -218,6 +225,9 @@ class OptitrackMotive(PeelDeviceBase):
 
         except Exception as e:
             cmd.writeLog("Motive could not connect: " + str(e))
+            cmd.writeLog(config)
+
+        return True
 
     def get_state(self):
         """ Plugin will set the state """

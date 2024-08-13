@@ -182,6 +182,8 @@ class ViconShogun(PeelDeviceBase):
         self.subjects = subjects
         self.set_capture_folder = set_capture_folder
 
+        return True
+
     def connect_device(self):
 
         print("Connecting to SHOGUN!")
@@ -288,13 +290,13 @@ class ViconShogun(PeelDeviceBase):
 
     def command(self, command, arg):
 
-        print("SHOGUN", command, arg)
+        # print("SHOGUN", command, arg)
+
+        update = False
 
         if self.client is None:
             print("No client")
             return
-
-        self.error = None
 
         if command == "play" and self.record_id is None:
             if self.play_id is not None:
@@ -309,6 +311,7 @@ class ViconShogun(PeelDeviceBase):
                 self.playback.enter_capture_review(arg)
                 self.playback.play()
                 self.play_id = arg
+
 
         if command == "record":
             ret = self.capture.set_capture_name(arg)
@@ -355,9 +358,10 @@ class ViconShogun(PeelDeviceBase):
             self.capture.set_capture_folder(capture_dir)
             self.capture_folder = capture_dir
 
-        # Delay the update state as shogun does not respond with the correct
-        # state right away
-        QtCore.QTimer.singleShot(250, self.update_state)
+        if command in ["play", "record", "stop"]:
+            # Delay the update state as shogun does not respond with the correct
+            # state right away
+            QtCore.QTimer.singleShot(250, self.update_state)
 
     @staticmethod
     def dialog_class():

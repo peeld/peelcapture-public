@@ -79,7 +79,7 @@ private:
 
 	std::string value_serverAddress;
 	std::string value_localAddress;
-	std::string value_multcastAddress;
+	std::string value_multicastAddress;
 
 };
 

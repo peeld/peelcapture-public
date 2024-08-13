@@ -244,6 +244,7 @@ class EpicIPhone(PeelDeviceBase):
         self.takes = kwargs.get('takes')
         self.mha = kwargs.get('mha')
         self.prefix_name = kwargs.get('prefix_name')
+        return True
 
     def teardown(self):
         if self.thread is not None and self.server is not None:

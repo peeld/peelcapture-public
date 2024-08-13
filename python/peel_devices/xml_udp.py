@@ -120,8 +120,8 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
 
     def reconfigure(self, name, **kwargs):
 
-        print("XMLUDP Reconfigure")
-        print(str((kwargs)))
+        #print("XMLUDP Reconfigure")
+        #print(str((kwargs)))
 
         self.name = name
 
@@ -137,6 +137,8 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         self.listen_port = kwargs.get('listen_port')
         self.format = kwargs.get('fmt')
         self.set_capture_folder = kwargs.get('set_capture_folder')
+
+        return True
 
     def connect_device(self):
 

@@ -41,6 +41,8 @@ MotivePlugin::~MotivePlugin() {
 
 bool MotivePlugin::reconfigure(const char* value) {
 
+	if (value == nullptr) { return false; }
+
 	logMessage("Reconfigure Motive Plugin\n");
 	logMessage(value);
 	logMessage("\n");
@@ -62,50 +64,47 @@ bool MotivePlugin::reconfigure(const char* value) {
 
 	memset(params.BitstreamVersion, 0, sizeof(params.BitstreamVersion));
 
-	if (value != nullptr)
-	{
-		std::istringstream ss(value);
+	std::istringstream ss(value);
 
-		std::string line;
+	std::string line;
 
-		while (std::getline(ss, line)) {
-			std::size_t pos = line.find('=');
-			if (pos != std::string::npos) {
-				std::string name = line.substr(0, pos);
-				std::string value = line.substr(pos + 1);
-				if (name.size() > 0 && value.size() > 0) {
-					if (name == "multicast") {
-						params.connectionType = value[0] == '1'
-							? ConnectionType_Multicast
-							: ConnectionType_Unicast;
-					}
-					if (name == "commandPort") {
-						params.serverCommandPort = std::atoi(value.c_str());
-					}
-					if (name == "dataPort") {
-						params.serverDataPort = std::atoi(value.c_str());
-					}
-					if (name == "serverAddress") {
-						value_serverAddress = value;
-						params.serverAddress = value_serverAddress.c_str();
-					}
-					if (name == "localAddress") {
-						value_localAddress = value;
-						params.localAddress = value_localAddress.c_str();
-					}
-					if (name == "multicastAddress") {
-						value_multcastAddress = value;
-						params.multicastAddress = value_multcastAddress.c_str();
-					}
-					if (name == "subjects") {
-						this->captureSubjects = value[0] == '1';
-					}
-					if (name == "timecode") {
-						this->captureTimecode = value[0] == '1';
-					}
-					if (name == "capturefolder") {
-						this->setCaptureFolder = value[0] == '1';
-					}
+	while (std::getline(ss, line)) {
+		std::size_t pos = line.find('=');
+		if (pos != std::string::npos && pos + 1 != line.size()) {
+			std::string name = line.substr(0, pos);
+			std::string value = line.substr(pos + 1);
+			if (name.size() > 0 && value.size() > 0) {
+				if (name == "multicast") {
+					params.connectionType = value[0] == '1'
+						? ConnectionType_Multicast
+						: ConnectionType_Unicast;
+				}
+				if (name == "commandPort") {
+					params.serverCommandPort = std::atoi(value.c_str());
+				}
+				if (name == "dataPort") {
+					params.serverDataPort = std::atoi(value.c_str());
+				}
+				if (name == "serverAddress") {
+					value_serverAddress = value;
+					params.serverAddress = value_serverAddress.c_str();
+				}
+				if (name == "localAddress") {
+					value_localAddress = value;
+					params.localAddress = value_localAddress.c_str();
+				}
+				if (name == "multicastAddress") {
+					value_multicastAddress = value;
+					params.multicastAddress = value_multicastAddress.c_str();
+				}
+				if (name == "subjects") {
+					this->captureSubjects = value[0] == '1';
+				}
+				if (name == "timecode") {
+					this->captureTimecode = value[0] == '1';
+				}
+				if (name == "capturefolder") {
+					this->setCaptureFolder = value[0] == '1';
 				}
 			}
 		}
@@ -396,7 +395,6 @@ void MotivePlugin::inFrame(sFrameOfMocapData* frame)
 		{
 			// Clear the list
 			this->subjects(NULL, 0);
-			this->props(NULL, 0);
 			this->mSubjectList.clear();
 		}
 

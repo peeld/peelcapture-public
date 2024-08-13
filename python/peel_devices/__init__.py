@@ -195,8 +195,7 @@ class SimpleDeviceWidget(BaseDeviceWidget):
 
         cmd.writeLog("UpdateDevice:")
         cmd.writeLog(str(data))
-        device.reconfigure(name, **data)
-        return True
+        return device.reconfigure(name, **data)
 
     def do_add(self):
         """ The ui is asking for the device to be added - validate and save the settings
@@ -690,6 +689,8 @@ class TcpDevice(PeelDeviceBase):
         self.error = None
         self.connected_state = None
         self.name = name
+
+        return True
 
     def connect_device(self):
 

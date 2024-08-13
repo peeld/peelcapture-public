@@ -208,6 +208,8 @@ class VCam(PeelDeviceBase):
         self.listen_ip = kwargs.get('listen_ip')
         self.listen_port = kwargs.get('listen_port')
 
+        return True
+
     def device_connect(self):
 
         if self.host and self.port:

@@ -248,6 +248,8 @@ class Blade(PeelDeviceBase):
         self.take_name = ""
         self.error = None
 
+        return True
+
     def connect_device(self):
 
         if self.listener:
@@ -345,7 +347,6 @@ class Blade(PeelDeviceBase):
         msg = "client on -port %d;" % self.broadcast_port
         QtWidgets.QMessageBox.information(widget, "Blade", "Run this in blade: " + msg)
         QtGui.QGuiApplication.clipboard().setText(msg)
-
 
     def edit(self, settings):
 

@@ -272,9 +272,14 @@ def device_info(n):
     button.pressed.connect(d.accept)
     layout.addWidget(button)
 
-    if d.exec_():
+    while True:
+        if not d.exec_():
+            break
+
         if widget.do_add():
-            widget.update_device(device)
+            if not widget.update_device(device):
+                continue
+
             cmd.updateDevice(device.device_ref())
             device.connect_device()
             device.device_added(widget)

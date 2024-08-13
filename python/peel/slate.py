@@ -27,6 +27,14 @@ def set_take(name):
     getInstance().set_take(name)
 
 
+def set_take_recording(name):
+    getInstance().set_take_recording(name)
+
+
+def stop():
+    getInstance().stop()
+
+
 def set_text1(value):
     getInstance().set_text1(value)
 
@@ -47,10 +55,24 @@ class SlateWidget(QtWidgets.QWidget):
     def __init__(self, parent):
         super().__init__(parent)
         self.text = ""
+        self.color = QtCore.Qt.white
 
     def set_text(self, value):
         self.text = value
         self.repaint()
+
+    def set_color(self, color):
+        self.color = color
+        self.repaint()
+
+    def red(self):
+        self.set_color(QtGui.QColor(220, 22, 22))
+
+    def grey(self):
+        self.set_color(QtGui.QColor(128, 128, 128))
+
+    def white(self):
+        self.set_color(QtCore.Qt.white)
 
     def paintEvent(self, e):
 
@@ -58,10 +80,10 @@ class SlateWidget(QtWidgets.QWidget):
 
         painter = QtGui.QPainter(self)
 
-        painter.setBrush(QtGui.QBrush(QtCore.Qt.black));
+        painter.setBrush(QtGui.QBrush(QtCore.Qt.black))
         painter.drawRect(self.rect())
 
-        painter.setPen(QtGui.QPen(QtCore.Qt.white))
+        painter.setPen(QtGui.QPen(self.color))
 
         rect = self.rect()
         f = QtGui.QFont(self.font())
@@ -87,6 +109,8 @@ class Slate(QtWidgets.QDialog):
     def __init__(self, parent):
         super().__init__(parent)
 
+        self.last_take_name = None
+
         layout = QtWidgets.QVBoxLayout()
 
         layout.setContentsMargins(0, 0, 0, 0)
@@ -103,6 +127,9 @@ class Slate(QtWidgets.QDialog):
 
         self.label2 = SlateWidget(self)
         layout.addWidget(self.label2)
+
+        self.last_take = SlateWidget(self)
+        layout.addWidget(self.last_take)
 
         self.setLayout(layout)
 
@@ -121,8 +148,23 @@ class Slate(QtWidgets.QDialog):
         self.label1.setFont(f)
         self.label2.setFont(f)
 
+        f2 = db.font(font_family, font_style, 9)
+        self.last_take.setFont(f2)
+        self.last_take.grey()
+
     def set_take(self, name):
         self.take.set_text(str(name))
+
+    def set_take_recording(self, name):
+        self.last_take_name = name
+        self.take.set_text(str(name))
+        self.take.red()
+
+    def stop(self):
+        if self.last_take_name:
+            self.last_take.set_text("LAST: " + str(self.last_take_name))
+            self.last_take_name = None
+        self.take.white()
 
     def set_text1(self, value):
         self.label1.set_text(str(value))

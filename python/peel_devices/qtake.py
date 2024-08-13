@@ -62,6 +62,7 @@ class QTake(PeelDeviceBase):
     def reconfigure(self, name, host=None):
         self.name = name
         self.host = host
+        return True
 
     def connect_device(self):
         self.teardown()

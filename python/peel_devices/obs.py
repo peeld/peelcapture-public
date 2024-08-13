@@ -138,6 +138,7 @@ class ObsDevice(PeelDeviceBase):
         self.password = kwargs['password']
         self.set_folder = kwargs['set_folder']
         self.state = "OFFLINE"
+        return True
 
     def teardown(self):
         if self.conn is not None:

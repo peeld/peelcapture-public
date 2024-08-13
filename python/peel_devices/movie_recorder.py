@@ -55,6 +55,8 @@ class MovieRecorder(PeelDeviceBase):
         self.state = None
         self.name = name
 
+        return True
+
     def connect_device(self):
         self.update_state()
 

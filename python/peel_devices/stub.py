@@ -176,6 +176,7 @@ class Stub(PeelDeviceBase):
     def reconfigure(self, name, **kwargs):
         """ Change the settings in the device. """
         self.name = name
+        return True
 
     def device_connect(self):
         """ Initialize the device"""

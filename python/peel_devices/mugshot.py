@@ -54,6 +54,7 @@ class Mugshot(PeelDeviceBase):
         self.name = name
         self.host = kwargs.get('host', self.host)
         self._update_state("OFFLINE", "")
+        return True
 
     def connect_device(self):
         self.check_connection()

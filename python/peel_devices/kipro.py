@@ -316,6 +316,7 @@ class KiPro(PeelDeviceBase):
         self.name = name
         self.host = kwargs.get("host", None)
         self.prefix_device_name = kwargs.get("prefix_device_name", False)
+        return True
 
     def __str__(self):
         msg = self.name

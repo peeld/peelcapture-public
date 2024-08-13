@@ -101,17 +101,23 @@ class HarvestDialog(QtWidgets.QDialog):
 
         # Buttons
         self.go_button = QtWidgets.QPushButton("Get Files")
-        self.go_button.pressed.connect(self.go)
+        self.go_button.released.connect(self.go)
+        self.browse_button = QtWidgets.QPushButton("Browse Files")
+        self.browse_button.released.connect(self.browse_files)
         self.close_button = QtWidgets.QPushButton("Close")
-        self.close_button.pressed.connect(self.teardown)
+        self.close_button.released.connect(self.teardown)
 
         self.all_files = QtWidgets.QCheckBox("All Files")
 
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addWidget(self.go_button)
+        button_layout.addSpacing(3)
+        button_layout.addWidget(self.browse_button)
+        button_layout.addSpacing(3)
         button_layout.addWidget(self.close_button)
         button_layout.addStretch(1)
         button_layout.addWidget(self.all_files)
+        button_layout.addSpacing(3)
 
         layout.addItem(button_layout)
 
@@ -290,7 +296,10 @@ class HarvestDialog(QtWidgets.QDialog):
         if ret:
             self.path.setText(ret)
 
-
-
+    def browse_files(self):
+        path = self.path.text()
+        url = QtCore.QUrl.fromLocalFile(path)
+        print(url)
+        QtGui.QDesktopServices.openUrl(url)
 
 

@@ -130,6 +130,7 @@ class MotionBuilderDevice(PeelDeviceBase):
         self.name = name
         self.host = kwargs.get('host')
         self.port = kwargs.get('port')
+        return True
 
     def connect_device(self):
         self.teardown()

@@ -36,6 +36,7 @@ class MyDevice(PeelDeviceBase):
         self.name = name
         cmd.configureDevice(self.plugin_id, "DATA")
         cmd.setDeviceEnabled(self.plugin_id, self.enabled)
+        return True
 
     def connect_device(self):
         pass

@@ -195,6 +195,7 @@ class Hue(PeelDeviceBase):
         self.host = kwargs.get('host')
         self.idle_color = kwargs.get('idle_color')
         self.rec_ok_color = kwargs['rec_ok_color']
+        return True
 
     def get_info(self):
 

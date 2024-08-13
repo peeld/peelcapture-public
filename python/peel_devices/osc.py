@@ -173,6 +173,8 @@ class Osc(peel_devices.PeelDeviceBase):
         print("OSC Reconfigure: ", name, self.host, self.port, self.broadcast,
               self.listen_ip, self.listen_port)
 
+        return True
+
     def teardown(self):
         if self.client is not None:
             #self.client.client_close()
@@ -342,7 +344,7 @@ class UnrealDialog(peel_devices.SimpleDeviceWidget):
     def __init__(self, settings):
         super(UnrealDialog, self).__init__(settings, "Unreal", has_host=True, has_port=True,
                                            has_broadcast=True, has_listen_ip=True, has_listen_port=True)
-        link = 'https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-unreal-engine-4/'
+        link = 'https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-unreal-engine/'
         msg = '<P><A HREF="' + link + '">Documentation</A></P>'
         msg += "<P>Enable Switchboard and OSC plugins in Unreal</P>"
         msg += "<P>In the Unreal project settings, enable 'Start an OSC Server when the editor launches'</P>"

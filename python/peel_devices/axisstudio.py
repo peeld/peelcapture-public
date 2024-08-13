@@ -43,6 +43,7 @@ class AxisStudio(PeelDeviceBase):
         self.port = kwargs['port']
         cmd.configureDevice(self.plugin_id, f"{self.host}:{self.port}")
         # cmd.setDeviceEnabled(self.plugin_id, self.enabled)
+        return True
 
     def connect_device(self):
         pass
