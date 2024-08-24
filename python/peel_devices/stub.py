@@ -178,7 +178,7 @@ class Stub(PeelDeviceBase):
         self.name = name
         return True
 
-    def device_connect(self):
+    def connect_device(self):
         """ Initialize the device"""
         pass
 

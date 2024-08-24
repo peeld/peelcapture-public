@@ -186,7 +186,9 @@ class Osc(peel_devices.PeelDeviceBase):
             self.listen_thread.wait(1000)
             self.listen_thread = None
 
-    def device_connect(self):
+    def connect_device(self):
+
+        print("OSC CONNECT")
 
         # Close the connections
         self.teardown()
@@ -376,7 +378,7 @@ class Unreal(Osc):
 
     def command(self, command, argument):
         if not self.client:
-            self.device_connect()
+            self.connect_device()
         if command == "stop":
             # Stop recording
             self.is_recording = False

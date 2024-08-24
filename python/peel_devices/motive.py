@@ -223,6 +223,9 @@ class OptitrackMotive(PeelDeviceBase):
 
             cmd.configureDevice(self.plugin_id, config)
 
+            if self.set_capture_folder:
+                cmd.deviceCommand(self.device_id, "SetDataDirectory:" + self.data_directory().replace("/", r'\\'))
+
         except Exception as e:
             cmd.writeLog("Motive could not connect: " + str(e))
             cmd.writeLog(config)
@@ -238,21 +241,8 @@ class OptitrackMotive(PeelDeviceBase):
         return ""
 
     def command(self, command, argument):
-        """ Respond to PeelCapture asking us to do something calls to cmd.motiveCommand are sent to motive using the
-            natnet sdk "SendMessageAndWait" function.  Responses  are printed out to the console as ascii.
-            When we get a response the main app will call peel.set_motive_status(True/False) -> set_motive_state(...)
-        """
-
-        if command == "record":
-            if self.set_capture_folder:
-                cmd.deviceCommand(self.device_id, "SetDataDirectory:" + self.data_directory().replace("/", r'\\'))
-            cmd.deviceCommand(self.device_id, "Record:" + argument)
-
-        if command == "stop":
-            cmd.deviceCommand(self.device_id, "StopRecording")
-
-        if command == "play":
-            cmd.deviceCommand(self.device_id, "Play:" + argument)
+        """ Commands are handled by the plugin only """
+        pass
 
     @staticmethod
     def dialog_class():

@@ -179,6 +179,9 @@ class AddWidget(BaseDeviceWidget):
             device.prefix_name = self.prefix_name.isChecked()
         except ValueError:
             QtWidgets.QMessageBox(self, "Error", "Invalid port")
+            return False
+
+        return True
 
     def do_add(self):
         if not super().do_add():

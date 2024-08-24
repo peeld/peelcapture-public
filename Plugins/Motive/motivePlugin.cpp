@@ -32,8 +32,12 @@ MotivePlugin::MotivePlugin()
 	, lastFrameValue(0)
 	, error(ErrorCode_OK)
 	, tc_h(0), tc_m(0), tc_s(0), tc_f(0)
+	, playing(false)
 {
 	NatNet_SetLogCallback(::messageCallback);
+
+
+
 };
 
 MotivePlugin::~MotivePlugin() {
@@ -42,6 +46,15 @@ MotivePlugin::~MotivePlugin() {
 bool MotivePlugin::reconfigure(const char* value) {
 
 	if (value == nullptr) { return false; }
+
+	std::ostringstream oss;
+	unsigned char version[4];
+	NatNet_GetVersion(version);
+	oss << "Natnet version: " 
+	    << (int)version[0] << "." << (int)version[1] << "."
+		<< (int)version[2] << "." << (int)version[3];
+
+	logMessage(oss.str().c_str());
 
 	logMessage("Reconfigure Motive Plugin\n");
 	logMessage(value);
@@ -69,44 +82,52 @@ bool MotivePlugin::reconfigure(const char* value) {
 	std::string line;
 
 	while (std::getline(ss, line)) {
+
+		logMessage(line.c_str());
+
 		std::size_t pos = line.find('=');
-		if (pos != std::string::npos && pos + 1 != line.size()) {
-			std::string name = line.substr(0, pos);
-			std::string value = line.substr(pos + 1);
-			if (name.size() > 0 && value.size() > 0) {
-				if (name == "multicast") {
-					params.connectionType = value[0] == '1'
-						? ConnectionType_Multicast
-						: ConnectionType_Unicast;
-				}
-				if (name == "commandPort") {
-					params.serverCommandPort = std::atoi(value.c_str());
-				}
-				if (name == "dataPort") {
-					params.serverDataPort = std::atoi(value.c_str());
-				}
-				if (name == "serverAddress") {
-					value_serverAddress = value;
-					params.serverAddress = value_serverAddress.c_str();
-				}
-				if (name == "localAddress") {
-					value_localAddress = value;
-					params.localAddress = value_localAddress.c_str();
-				}
-				if (name == "multicastAddress") {
-					value_multicastAddress = value;
-					params.multicastAddress = value_multicastAddress.c_str();
-				}
-				if (name == "subjects") {
-					this->captureSubjects = value[0] == '1';
-				}
-				if (name == "timecode") {
-					this->captureTimecode = value[0] == '1';
-				}
-				if (name == "capturefolder") {
-					this->setCaptureFolder = value[0] == '1';
-				}
-			}
+		if (pos == std::string::npos || pos + 1 == line.size()) {
+			continue;
+		}
+
+		std::string name = line.substr(0, pos);
+		std::string value = line.substr(pos + 1);
+
+		if (name.size() == 0 || value.size() == 0) {
+			continue;
+		}
+
+		if (name == "multicast") {
+			params.connectionType = value[0] == '1'
+				? ConnectionType_Multicast
+				: ConnectionType_Unicast;
+		}
+		if (name == "commandPort") {
+			params.serverCommandPort = std::atoi(value.c_str());
+		}
+		if (name == "dataPort") {
+			params.serverDataPort = std::atoi(value.c_str());
+		}
+		if (name == "serverAddress") {
+			value_serverAddress = value;
+			params.serverAddress = value_serverAddress.c_str();
+		}
+		if (name == "localAddress") {
+			value_localAddress = value;
+			params.localAddress = value_localAddress.c_str();
+		}
+		if (name == "multicastAddress") {
+			value_multicastAddress = value;
+			params.multicastAddress = value_multicastAddress.c_str();
+		}
+		if (name == "subjects") {
+			this->captureSubjects = value[0] == '1';
+		}
+		if (name == "timecode") {
+			this->captureTimecode = value[0] == '1';
+		}
+		if (name == "capturefolder") {
+			this->setCaptureFolder = value[0] == '1';
 		}
 	}
 
@@ -164,7 +185,7 @@ bool MotivePlugin::sendMotive(const char* command)
 
 const char* MotivePlugin::pluginCommand(const char* command)
 {
-
+	// Called via pluginCommand
 
 	logMessage(command);
 
@@ -186,17 +207,26 @@ bool MotivePlugin::command(const char* name, const char* arg)
 	if (strcmp(name, "record") == 0) {
 		std::ostringstream oss;
 		oss << "SetRecordTakeName," << arg;
-		sendMotive(oss.str().c_str());
-		if (sendMotive("StartRecording"))
+		if (sendMotive(oss.str().c_str()) && sendMotive("StartRecording"))
 		{
 			updateState("RECORDING", "");
 		}
 	}
 
 	if (strcmp(name, "stop") == 0) {
-		if (sendMotive("StopRecording"))
+		if (playing) {
+			if (sendMotive("TimelineStop"))
+			{
+				updateState("ONLINE", "");
+			}
+			playing = false;
+		}
+		else
 		{
-			updateState("ONLINE", "");
+			if (sendMotive("StopRecording"))
+			{
+				updateState("ONLINE", "");
+			}
 		}
 	}
 
@@ -204,8 +234,13 @@ bool MotivePlugin::command(const char* name, const char* arg)
 		std::ostringstream oss;
 		oss << "SetPlaybackTakeName," << arg;
 		if (sendMotive(oss.str().c_str())) {
-			updateState("PLAYING", arg);
+
+			if (sendMotive("TimelinePlay")) {
+				updateState("PLAYING", arg);
+				playing = true;
+			}
 		}
+
 	}
 
 	return true;
@@ -243,7 +278,9 @@ bool MotivePlugin::connect()
 		return false;
 	}
 
-	client.SetFrameReceivedCallback(frameCallback, this);
+	if (this->captureSubjects) {
+		client.SetFrameReceivedCallback(frameCallback, this);
+	}
 
 	error = client.Connect(params);
 	if (error != ErrorCode_OK) {
@@ -255,7 +292,9 @@ bool MotivePlugin::connect()
 
 	updateState("ONLINE", "");
 
-	pluginCommand("SubscribeToData,Skeleton");
+	if (this->captureSubjects) {
+		sendMotive("SubscribeToData,Skeleton");
+	}
 
 	return true;
 }

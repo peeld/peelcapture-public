@@ -210,7 +210,7 @@ class VCam(PeelDeviceBase):
 
         return True
 
-    def device_connect(self):
+    def connect_device(self):
 
         if self.host and self.port:
             self.socket_thread = VCamSocketThread(self.host, self.port, self.allow_record, self.allow_play)

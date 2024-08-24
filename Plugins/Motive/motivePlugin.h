@@ -8,7 +8,7 @@
 
 #include "NatNetClient.h"
 
-
+// https://docs.optitrack.com/developer-tools/natnet-sdk
 
 
 class MotivePlugin : public PeelCapDeviceInterface {
@@ -73,6 +73,8 @@ private:
 	int tc_f;
 
 	void getSubjectNames();  // gets props too
+
+	bool playing;
 
 private:
 	std::string message;

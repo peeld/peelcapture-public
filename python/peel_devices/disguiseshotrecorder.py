@@ -209,7 +209,7 @@ class Disguise(PeelDeviceBase):
     def dialog_class():
         return DisguiseDialog
 
-    def device_connect(self):
+    def connect_device(self):
         pass
 
     def list_takes(self):

@@ -129,7 +129,7 @@ class HueDeviceWidget(BaseDeviceWidget):
         rec_ok_color = self.rec_ok_color.text()
 
         device.reconfigure(self.name, host=host, idle_color=idle_color, rec_ok_color=rec_ok_color)
-        return device.connect_bridge()
+        return device.connect_device()
 
     def do_add(self):
         if not super().do_add():

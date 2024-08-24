@@ -21,6 +21,8 @@ class XmlUdpListenThread(QtCore.QThread):
 
     def run(self):
 
+        print("XML UDP STARTING")
+
         try:
             self.listen.bind((self.host, self.port))
         except IOError as e:
@@ -107,6 +109,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         self.recording = False
         self.current_take = None
         self.set_capture_folder = False
+        self.enter_clip_editing = False  # For Rokoko
 
     def as_dict(self):
         return {'name': self.name,
@@ -249,15 +252,6 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             msg = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>' + \
                   '<CaptureStop>' + \
                   '<Name VALUE="%s"/>' % self.current_take + \
-                  '<SessionName VALUE=""/>' + \
-                  '<Notes VALUE=""/>' + \
-                  '<Assets VALUE=""/>' + \
-                  '<Description VALUE=""/>' + \
-                  '<DatabasePath VALUE=""/>' + \
-                  '<TimeCode VALUE="00:00:00:00"/>' + \
-                  '<PacketID VALUE="%d"/>' % self.packet_id + \
-                  '<HostName VALUE="Motive"/>' + \
-                  '<ProcessID VALUE="22236"/>' + \
                   '</CaptureStop>'
 
         elif self.format == "XSENS":
@@ -282,6 +276,13 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             msg = '<CaptureStop>' \
                 + '<Name VALUE="%s" />' % self.current_take \
                 + '</CaptureStop>\n'
+
+        elif self.format == "HOLOSYS":
+            msg = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' + \
+                    '<CaptureStop>\n' + \
+                    '    <Name VALUE="%s"/>\n' % self.current_take + \
+                    '    <PacketID VALUE="%d"/>\n' % self.packet_id + \
+                    '</CaptureStop>\n'
 
         else:
             msg = '<?xml version="1.0" encoding="utf-8" ?>\n' \
@@ -320,15 +321,6 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             msg = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>' + \
                   '<CaptureStart>' + \
                   '<Name VALUE="%s"/>' % self.current_take + \
-                  '<SessionName VALUE=""/>' + \
-                  '<Notes VALUE=""/>' + \
-                  '<Assets VALUE=""/>' + \
-                  '<Description VALUE=""/>' + \
-                  '<DatabasePath VALUE=""/>' + \
-                  '<TimeCode VALUE="00:00:00:00"/>' + \
-                  '<PacketID VALUE="%d"/>' % self.packet_id + \
-                  '<HostName VALUE="Motive"/>' + \
-                  '<ProcessID VALUE="22236"/>' + \
                   '</CaptureStart>'
 
         elif self.format == 'XSENS':
@@ -357,6 +349,11 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
                 + '<Name VALUE="%s" />' % self.current_take \
                 + '</CaptureStart>'
 
+        elif self.format == "HOLOSYS":
+            msg = '<CaptureStart>\n' + \
+                    '    <Name VALUE="%s"/>\n' % self.current_take + \
+                    '    <PacketID VALUE="%d"/>\n' % self.packet_id + \
+                    '</CaptureStart>\n'
         else:
             msg = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n' \
                 + '<CaptureStart>\n' \
@@ -405,7 +402,7 @@ class AddXmlUdpWidget(peel_devices.SimpleDeviceWidget):
                                               has_set_capture_folder=True)
 
         self.format_mode = QtWidgets.QComboBox()
-        self.format_mode.addItems(["Vicon", "Optitrack", "XSENS", "Blade", "Rokoko", "Nansense"])
+        self.format_mode.addItems(["Vicon", "Optitrack", "XSENS", "Blade", "Rokoko", "Nansense", "HOLOSYS"])
         self.format_mode.setCurrentText(settings.value(self.title + "Format", "Vicon"))
         self.form_layout.addRow("Format", self.format_mode)
 
