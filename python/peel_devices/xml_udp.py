@@ -3,6 +3,7 @@ import socket
 import threading
 import xml.etree.ElementTree as et
 from PySide6 import QtWidgets, QtCore
+import select
 
 
 class XmlUdpListenThread(QtCore.QThread):
@@ -34,7 +35,19 @@ class XmlUdpListenThread(QtCore.QThread):
 
         while self.running:
             try:
+
                 last_status = self.status
+
+                readable, _, _ = select.select([self.listen], [], [], 2.0)
+                if not self.listen in readable:
+                    print("No data")
+                    continue
+
+                if self.listen.fileno() == -1:
+                    print("xmludp Socket is closed")
+                    return
+
+
                 data, remote = self.listen.recvfrom(1024)
 
                 print("-------XMLUDP-----------")
@@ -205,9 +218,12 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             self.udp = None
 
         if self.listen_thread is not None and not self.listen_thread.isFinished():
+            print("Stopping")
             self.listen_thread.running = False
             self.listen_thread.listen.close()
+            print("Waiting");
             self.listen_thread.wait()
+            print("Done")
 
     def command(self, command, arg):
         if command == "record":
