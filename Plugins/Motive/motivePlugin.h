@@ -76,6 +76,8 @@ private:
 
 	bool playing;
 
+	bool connected;
+
 private:
 	std::string message;
 

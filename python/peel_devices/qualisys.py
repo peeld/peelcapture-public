@@ -227,10 +227,10 @@ class QualisysDevice(PeelDeviceBase):
             self.loop.run_until_complete(self.stop_measurement())
             self.loop.run_until_complete(self.save_measurement(self.take_name))
 
-    def get_state(self):
+    def get_state(self, reason=None):
         return self.state
 
-    def get_info(self):
+    def get_info(self, reason=None):
         return self.info
 
     @staticmethod

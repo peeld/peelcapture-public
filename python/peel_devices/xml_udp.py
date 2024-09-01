@@ -171,7 +171,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
     def do_state(self):
         self.update_state()
 
-    def get_state(self):
+    def get_state(self, reason=None):
 
         if not self.enabled:
             return "OFFLINE"
@@ -189,7 +189,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             else:
                 return "ONLINE"
 
-    def get_info(self):
+    def get_info(self, reason=None):
         if self.error is not None:
             return self.error
         if self.listen_thread is not None:

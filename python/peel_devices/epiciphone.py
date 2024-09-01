@@ -397,14 +397,14 @@ class EpicIPhone(PeelDeviceBase):
             self.client.send_message('/ThermalsQuery', 1)
         self.query = not self.query
 
-    def get_state(self):
+    def get_state(self, reason=None):
         if not self.enabled:
             self.ping_timer.stop()
             return "OFFLINE"
 
         return self.state
 
-    def get_info(self):
+    def get_info(self, reason=None):
         return self.info
 
     def __str__(self):

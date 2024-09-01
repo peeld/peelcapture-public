@@ -241,12 +241,12 @@ class Osc(peel_devices.PeelDeviceBase):
     def command(self, command, argument):
         raise NotImplementedError
 
-    def get_state(self):
+    def get_state(self, reason=None):
         if not self.enabled:
             return "OFFLINE"
         return self.state
 
-    def get_info(self):
+    def get_info(self, reason=None):
         return ""
 
 
@@ -368,7 +368,7 @@ class Unreal(Osc):
     def dialog_class():
         return UnrealDialog
 
-    def get_state(self):
+    def get_state(self, reason=None):
         if not self.enabled:
             return "OFFLINE"
         if self.state == "OFFLINE":

@@ -335,7 +335,7 @@ class KiPro(PeelDeviceBase):
         self.message = None
         QtCore.QTimer.singleShot(500, self.update_state)
 
-    def get_state(self):
+    def get_state(self, reason=None):
 
         print("STATE")
 
@@ -384,7 +384,7 @@ class KiPro(PeelDeviceBase):
         cmd.writeLog(f"{self} - unknown state: {transport} {media}\n")
         return "ERROR"
 
-    def get_info(self):
+    def get_info(self, reason=None):
         return self.message or ""
 
     def command(self, command, arg):

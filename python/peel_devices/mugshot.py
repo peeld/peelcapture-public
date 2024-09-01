@@ -59,10 +59,10 @@ class Mugshot(PeelDeviceBase):
     def connect_device(self):
         self.check_connection()
 
-    def get_state(self):
+    def get_state(self, reason=None):
         return self.state
 
-    def get_info(self):
+    def get_info(self, reason=None):
         return self.info
 
     def teardown(self):

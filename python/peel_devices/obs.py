@@ -207,12 +207,12 @@ class ObsDevice(PeelDeviceBase):
     def __str__(self):
         return self.name
 
-    def get_state(self):
+    def get_state(self, reason=None):
         if not self.enabled:
             return "OFFLINE"
         return self.state
 
-    def get_info(self):
+    def get_info(self, reason=None):
         return self.info
 
     def thread_state_change(self):
@@ -253,7 +253,7 @@ class ObsDevice(PeelDeviceBase):
             print("Unknown obs response.  CMD: " + str(cmd)
                   + "  RESULT: " + str(response.requestStatus.result))
 
-        self.update_state("ERROR")
+        self.update_state("ERROR", "")
 
     def send(self, cmd, data=None):
         print("OBS SEND CMD: " + str(cmd) + " DATA:" + str(data))

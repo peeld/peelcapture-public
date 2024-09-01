@@ -23,8 +23,9 @@
 # OR NOT THE LICENSOR WAS ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
 
 
-from peel_devices import TcpDevice, SimpleDeviceWidget
-from PeelApp import cmd
+from peel_devices import SimpleDeviceWidget
+from peel_devices.tcp import TcpDevice
+
 
 
 class PiWidget(SimpleDeviceWidget):

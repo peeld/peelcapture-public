@@ -232,11 +232,11 @@ class OptitrackMotive(PeelDeviceBase):
 
         return True
 
-    def get_state(self):
+    def get_state(self, reason=None):
         """ Plugin will set the state """
         return ""
 
-    def get_info(self):
+    def get_info(self, reason=None):
         """ Plugin will set the info """
         return ""
 

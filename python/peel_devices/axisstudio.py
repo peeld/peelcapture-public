@@ -58,11 +58,11 @@ class AxisStudio(PeelDeviceBase):
         # plugin commands are passed directly
         pass
 
-    def get_state(self):
+    def get_state(self, reason=None):
         # plugin device states are managed directly
         return ""
 
-    def get_info(self):
+    def get_info(self, reason=None):
         # plugin device info messages are handled directly
         return ""
 

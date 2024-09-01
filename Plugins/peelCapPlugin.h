@@ -26,7 +26,7 @@ struct PluginCallbacks
     std::function<void(void*, int, int, int, int, float, bool)> timecode;
     std::function<void(void*, const char*, const char*)> state;
     std::function<void(void*, const char**, int)> subject;
-    std::function<void(void*, const char **, int)> prop;
+    std::function<void(void*, const char**, int)> prop;
     std::function<void(void*, const char*)> log;
 };
 

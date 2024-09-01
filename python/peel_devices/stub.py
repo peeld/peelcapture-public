@@ -189,13 +189,13 @@ class Stub(PeelDeviceBase):
             state = str(self.thread)
         return self.name + " - " + state
 
-    def get_info(self):
+    def get_info(self, reason=None):
         """ return a string to show the state of the device in the main ui """
         if self.thread is None or self.thread.state != "running":
             return ""
         return str(self.thread.count)
 
-    def get_state(self):
+    def get_state(self, reason=None):
         """ should return "OFFLINE", "ONLINE", "RECORDING" or "ERROR"
             avoid calling update_state() here.  Used to determine if this device
             is working as intended.

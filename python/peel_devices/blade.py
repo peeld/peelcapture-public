@@ -269,7 +269,7 @@ class Blade(PeelDeviceBase):
         self.listener.stop()
         self.listener.wait()
 
-    def get_state(self):
+    def get_state(self, reason=None):
         if self.error is not None:
             return "ERROR"
         if not self.enabled:

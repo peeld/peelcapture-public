@@ -33,14 +33,13 @@ MotivePlugin::MotivePlugin()
 	, error(ErrorCode_OK)
 	, tc_h(0), tc_m(0), tc_s(0), tc_f(0)
 	, playing(false)
+	, connected(false)
 {
 	NatNet_SetLogCallback(::messageCallback);
-
-
-
 };
 
 MotivePlugin::~MotivePlugin() {
+	client.Disconnect();
 }
 
 bool MotivePlugin::reconfigure(const char* value) {
@@ -137,12 +136,88 @@ bool MotivePlugin::reconfigure(const char* value) {
 		return false;
 	}
 
-	this->connect();
+	return this->connect();
+}
+
+
+bool MotivePlugin::connect()
+{
+	logMessage("Motive Connecting");
+
+	this->disconnect();
+
+	if (params.serverCommandPort == 0) {
+		updateState("ERROR", "Command port not set");
+		return false;
+	}
+
+	if (params.serverDataPort == 0) {
+		updateState("ERROR", "Data port not set");
+		return false;
+	}
+
+	if (params.serverAddress == 0 || params.serverAddress[0] == 0) {
+		updateState("ERROR", "Server address not set");
+		return false;
+	}
+
+	if (params.localAddress == 0 || params.localAddress[0] == 0) {
+		updateState("ERROR", "Local address not set");
+		return false;
+	}
+
+	if (params.multicastAddress == 0 || params.multicastAddress[0] == 0) {
+		updateState("ERROR", "Mukticast address not set");
+		return false;
+	}
+
+	if (this->captureSubjects) {
+		client.SetFrameReceivedCallback(frameCallback, this);
+	}
+
+	error = client.Connect(params);
+	if (error != ErrorCode_OK) {
+		updateState("OFFLINE", "Could not connect");
+		return false;
+	}
+
+	logMessage("Motive Connected");
+
+	updateState("ONLINE", "");
+
+	connected = true;
+
+	if (this->captureSubjects) {
+		// Not using sendMessage here to avoid possible circular call .
+		uint8_t* data;
+		int   sz;
+		error = client.SendMessageAndWait("SubscribeToData,Skeleton", (void**)&data, &sz);
+		if (error != ErrorCode::ErrorCode_OK)
+		{
+			logMessage("Motive Subscribe Skeleton Failed");
+			this->message = this->errorStr(error);
+			logMessage(this->message.c_str());
+			updateState("ERROR", message.c_str());
+			//return false;
+		}
+	}
+
 
 	return true;
 }
 
-void MotivePlugin::teardown() {};
+bool MotivePlugin::disconnect()
+{
+	updateState("OFFLINE", "");
+	error = client.Disconnect();
+	connected = false;
+	return error == ErrorCode_OK;
+}
+
+
+void MotivePlugin::teardown() {
+	disconnect();
+};
 
 
 bool MotivePlugin::sendMotive(const char* command)
@@ -150,6 +225,12 @@ bool MotivePlugin::sendMotive(const char* command)
 	// https://wiki.optitrack.com/index.php?title=NatNet:_Class/Function_Reference#NatNetClient::SendMessageAndWait
 	// https://wiki.optitrack.com/index.php?title=NatNet:_Remote_Requests/Commands
 	// "Most commands : response buffer is a 4 byte success code (success=0, failure=1)"
+
+	if (!connected) {
+		if (!this->connect()) {
+			return false;
+		}
+	}
 
 	uint8_t* data;
 	int   sz;
@@ -160,12 +241,15 @@ bool MotivePlugin::sendMotive(const char* command)
 		this->message = this->errorStr(err);
 		logMessage(this->message.c_str());
 		updateState("ERROR", message.c_str());
+		client.Disconnect();
+		connected = false;
 		return false;
 	}
+	/*
 	if (data != nullptr && sz > 0)
 	{
-		/*		std::ostringstream ss;
-				ss << "Motive Replied: " << sz;
+				std::ostringstream ss;
+				//ss << "Motive Replied: " << sz;
 				std::string msg = QString("Motive replied: %0\n").arg(sz);
 				for (int i = 0; i < sz; i++)
 				{
@@ -173,11 +257,9 @@ bool MotivePlugin::sendMotive(const char* command)
 					if (i % 32 == 31) msg += "\n";
 				}
 				emit onMessage(msg);
-				emit commandResponse(true, QString());*/
+				emit commandResponse(true, QString());
 	}
-	else
-	{
-	}
+*/
 
 	return true;
 }
@@ -247,58 +329,6 @@ bool MotivePlugin::command(const char* name, const char* arg)
 }
 
 
-bool MotivePlugin::connect()
-{
-	logMessage("Motive Connecting");
-
-	client.Disconnect();
-
-	if (params.serverCommandPort == 0) {
-		updateState("ERROR", "Command port not set");
-		return false;
-	}
-
-	if (params.serverDataPort == 0) {
-		updateState("ERROR", "Data port not set");
-		return false;
-	}
-
-	if (params.serverAddress == 0 || params.serverAddress[0] == 0) {
-		updateState("ERROR", "Server address not set");
-		return false;
-	}
-
-	if (params.localAddress == 0 || params.localAddress[0] == 0) {
-		updateState("ERROR", "Local address not set");
-		return false;
-	}
-
-	if (params.multicastAddress == 0 || params.multicastAddress[0] == 0) {
-		updateState("ERROR", "Mukticast address not set");
-		return false;
-	}
-
-	if (this->captureSubjects) {
-		client.SetFrameReceivedCallback(frameCallback, this);
-	}
-
-	error = client.Connect(params);
-	if (error != ErrorCode_OK) {
-		updateState("OFFLINE", "Could not connect");
-		return false;
-	}
-
-	logMessage("Motive Connected");
-
-	updateState("ONLINE", "");
-
-	if (this->captureSubjects) {
-		sendMotive("SubscribeToData,Skeleton");
-	}
-
-	return true;
-}
-
 void MotivePlugin::getSubjectNames()
 {
 	sDataDescriptions* dataDescriptions = 0;
@@ -356,11 +386,6 @@ void MotivePlugin::messageCallback(int verbosity, const char* message)
 	//emit onMessage(QString("Motive> %0\n").arg(message));
 }
 
-bool MotivePlugin::disconnect()
-{
-	error = client.Disconnect();
-	return error == ErrorCode_OK;
-}
 
 void MotivePlugin::inFrame(sFrameOfMocapData* frame)
 {

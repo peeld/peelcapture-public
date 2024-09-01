@@ -81,10 +81,13 @@ class Audio(PeelDeviceBase):
     def __str__(self):
         return f"audio: {self.name}"
 
-    def get_state(self):
+    def get_state(self, reason=None):
         if not self.enabled:
             return "OFFLINE"
         return self.state
+
+    def get_info(self, reason=None):
+        return ""
 
     def reconfigure(self, **kwargs):
         pass

@@ -171,7 +171,8 @@ Multiline only commands:
 
 """
 from PeelApp import cmd
-from peel_devices import TcpDevice, SimpleDeviceWidget, DownloadThread
+from peel_devices import SimpleDeviceWidget, DownloadThread
+from peel_devices.tcp import TcpDevice
 import os.path
 from ftplib import FTP
 import ftplib

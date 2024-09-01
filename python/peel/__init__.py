@@ -26,7 +26,12 @@
 from peel_devices import shogun, epiciphone, DeviceCollection
 from peel import harvest
 from PySide6 import QtWidgets, QtCore
-from PeelApp import cmd
+
+try:
+    from PeelApp import cmd
+except ImportError:
+    print("Not running in PeelCapture - cmd will not be available")
+    cmd = None
 
 try:
     import peel_user_startup
@@ -60,6 +65,7 @@ def file_new():
 
 
 def teardown():
+    """ UI-ACTION - main window has closed """
     print("Shutting down")
     DEVICES.teardown()
 
@@ -84,7 +90,7 @@ def load_data(file_path, mode):
     with open(file_path, encoding="utf8") as fp:
         DEVICES.load_json(json.load(fp), mode)
 
-    DEVICES.update_all()
+    DEVICES.update_all("LOAD")
 
 
 class AddDeviceDialog(QtWidgets.QDialog):
@@ -207,7 +213,7 @@ class AddDeviceDialog(QtWidgets.QDialog):
 
         # Register all devices with the application
         # This needs to be done before connect so the status updates by connect work.
-        DEVICES.update_all()
+        DEVICES.update_all("ADD")
 
         # Start the device - this should update the status
         device.connect_device()
@@ -232,7 +238,7 @@ DIALOG_LOCK = False
 
 def add_device():
 
-    """ Called by main window to create a new device """
+    """ UI-ACTION - Called by main window to create a new device when the user clicks the "+" button """
 
     global DIALOG_LOCK
     if DIALOG_LOCK:
@@ -280,7 +286,7 @@ def device_info(n):
             if not widget.update_device(device):
                 continue
 
-            cmd.updateDevice(device.device_ref())
+            cmd.updateDevice(device.device_ref(reason="ADD"))
             device.connect_device()
             device.device_added(widget)
             d.deleteLater()
@@ -288,7 +294,7 @@ def device_info(n):
 
     d.deleteLater()
 
-    DEVICES.update_all()
+    DEVICES.update_all("INFO")
 
 
 def set_motive_status(state, msg):
@@ -306,7 +312,7 @@ def set_device_enable(n, state):
         return
 
     DEVICES[n].set_enabled(state)
-    DEVICES.update_all()
+    DEVICES.update_all("ENABLE")
 
 
 def set_subject(name, enabled):
@@ -316,11 +322,21 @@ def set_subject(name, enabled):
             device.set_subject(name, enabled)
 
 
-def delete_device(device_name):
+def delete_device(device_id):
     """ Called by the main app to delete a device instance, by device name (key) """
     global DEVICES
-    DEVICES.remove(device_name)
-    DEVICES.update_all()
+    DEVICES.remove(device_id)
+    DEVICES.update_all("DELETE")
+
+
+def refresh_device(device_id):
+    global DEVICES
+    DEVICES.refresh(device_id)
+
+
+def reconnect_device(device_id):
+    global DEVICES
+    DEVICES.reconnect(device_id)
 
 
 def command(command, argument):
@@ -341,7 +357,7 @@ def command(command, argument):
 
 
 def show_harvest():
-    """ Copy the files from the devices to a local directory """
+    """ UI-ACTION: Copy the files from the devices to a local directory """
     harvest_devices = [ d for d in DEVICES if d.has_harvest() ]
 
     if len(harvest_devices) == 0:
@@ -353,6 +369,7 @@ def show_harvest():
 
 
 def copy_selects():
+    """ UI-ACTION - call when the user calls the "copy selects" action in the main window"""
     global SETTINGS
     from peel import select_sort
     w = select_sort.SelectSort(SETTINGS, cmd.getMainWindow())
@@ -425,7 +442,7 @@ def movies(take=None):
 
 
 def lightbulb(value):
-    """ Called by the main app when the user presses the lightblub button """
+    """ UI-ACTION: Called by the main app when the user presses the lightblub button """
     for d in DEVICES:
         if d.device() == "hue":
             d.turn_on(value)
@@ -434,4 +451,4 @@ def lightbulb(value):
 def do_stop():
     """ Called shortly after stop event to update devices """
     global DEVICES
-    DEVICES.update_all()
+    DEVICES.update_all("STOP")

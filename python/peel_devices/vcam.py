@@ -250,10 +250,10 @@ class VCam(PeelDeviceBase):
     def __str__(self):
         return self.name
 
-    def get_info(self):
+    def get_info(self, reason=None):
         return ""
 
-    def get_state(self):
+    def get_state(self, reason=None):
         """ should return "OFFLINE", "ONLINE", "RECORDING" or "ERROR"    """
 
         if not self.enabled:

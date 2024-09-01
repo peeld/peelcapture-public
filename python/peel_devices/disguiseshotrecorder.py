@@ -105,7 +105,7 @@ class Disguise(PeelDeviceBase):
     def teardown(self):
         pass
 
-    def get_state(self):
+    def get_state(self, reason=None):
 
         if not self.enabled:
             return "OFFLINE"
@@ -118,7 +118,7 @@ class Disguise(PeelDeviceBase):
         print("Unknown state: ")
         return "ERROR"
 
-    def get_info(self):
+    def get_info(self, reason=None):
         return self.message or ""
 
     def command(self, command, arg):

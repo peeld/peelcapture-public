@@ -197,7 +197,7 @@ class Hue(PeelDeviceBase):
         self.rec_ok_color = kwargs['rec_ok_color']
         return True
 
-    def get_info(self):
+    def get_info(self, reason=None):
 
         if self.bridge is None:
             return "Not Connected"
@@ -207,7 +207,7 @@ class Hue(PeelDeviceBase):
 
         return ""
 
-    def get_state(self):
+    def get_state(self, reason=None):
         """ should return "OFFLINE", "ONLINE", "RECORDING" or "ERROR"
             avoid calling update_state() here.
         """

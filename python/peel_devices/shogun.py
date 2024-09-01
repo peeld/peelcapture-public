@@ -30,7 +30,10 @@ from vicon_core_api import Client, RPCError
 from PySide6 import QtWidgets, QtCore
 
 from peel_devices import PeelDeviceBase, SimpleDeviceWidget
-from PeelApp import cmd
+try:
+    from PeelApp import cmd
+except ImportError:
+    cmd = None
 
 import time
 import os.path, os
@@ -213,7 +216,7 @@ class ViconShogun(PeelDeviceBase):
     def teardown(self):
         cmd.deleteDevice(self.plugin_id)
 
-    def get_state(self):
+    def get_state(self, reason=None):
 
         if self.error is not None:
             return "ERROR"
@@ -252,7 +255,7 @@ class ViconShogun(PeelDeviceBase):
             self.error = str(e)
             return "ERROR"
 
-    def get_info(self):
+    def get_info(self, reason=None):
 
         if self.error is not None:
             return self.error
@@ -361,7 +364,10 @@ class ViconShogun(PeelDeviceBase):
         if command in ["play", "record", "stop"]:
             # Delay the update state as shogun does not respond with the correct
             # state right away
-            QtCore.QTimer.singleShot(250, self.update_state)
+            QtCore.QTimer.singleShot(250, self.do_update_state)
+
+    def do_update_state(self):
+        self.update_state()
 
     @staticmethod
     def dialog_class():

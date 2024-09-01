@@ -38,7 +38,7 @@ except ImportError:
     print("Could not import peel app - this script needs to run with peel Capture")
 
 from peel_devices import device_util
-from PySide6.QtNetwork import QTcpSocket, QAbstractSocket
+
 
 
 class BaseDeviceWidget(QtWidgets.QWidget):
@@ -305,8 +305,10 @@ class PeelDeviceBase(QtCore.QObject):
 
     def connect_device(self):
         """ Initiates the connection to the device.  Called by the application.
+            If the device is already connected this function should disconnect it then
+            reconnect again.
         """
-
+        
     def teardown(self):
         """ Called when the app is shutting down - tell all threads to stop and return """
         raise NotImplementedError
@@ -340,15 +342,20 @@ class PeelDeviceBase(QtCore.QObject):
         """
         raise NotImplementedError
 
-    def get_state(self):
-        """ devices should return "OFFLINE", "ONLINE", "RECORDING", "PLAYING" or "ERROR" """
+    def get_state(self, reason=None):
+        """ 
+        :param reason: why this is being requested.  used to determine if the request to the device should be made
+        :return: one of: "OFFLINE", "ONLINE", "RECORDING", "PLAYING" or "ERROR"
+        """
         raise NotImplementedError
 
-    def get_info(self):
-        """ Return the text to put in the main ui next to the device name """
+    def get_info(self, reason=None):
+        """
+        :param reason: why this is being requested.  used to determine if the request to the device should be made
+        :return: The text to put in the main ui next to the device name """
         return ""
 
-    def device_ref(self, state=None, info=None):
+    def device_ref(self, reason, state=None, info=None):
         """ Create a PeelApp.Device() object that contains the information needed
             to update the main ui.  The Device() object is implemented in c++ to
             make it easier to pass around inside the main app.
@@ -361,9 +368,9 @@ class PeelDeviceBase(QtCore.QObject):
         """
 
         if state is None:
-            state = self.get_state()
+            state = self.get_state(reason)
         if info is None:
-            info = self.get_info()
+            info = self.get_info(reason)
 
         device = PeelApp.cmd.newDevice()  # CPP class from parent app
         device.deviceId = self.device_id
@@ -384,22 +391,35 @@ class PeelDeviceBase(QtCore.QObject):
         # print(device.name, device.status)
         return device
 
-    def update_state(self, state=None, info=None):
-        """ Call this to push a status update to the main app.
-
-            Note that device_ref() may call get_state() and get_info() for the device,
-            so it's important that any calls to this function inside of get_state() or
-            get_info() populate state and info fields to avoid a loop/lockup.
-
+    def update_state(self, state=None, info=None, reason="UPDATE"):
+        """
             This function is usually called in response to a device thread or socket
             changing state or having new info to update in the ui to avoid the need for
             polling devices.
+
+            If state is None, the device's get_state() will be called for the value.
+
+            If info is None, the device's get_info() will be called to get the value.
+
+            A device can call:  self.update_state() to push a new state to the app whenever the state has changed.
+
+            When calling this function, if the state and info are known they should be provided as arguments.
+            If the state is not known and needs to be obtained by a request to the device, the state and/or info
+            values should not be provided and get_state should actively get the state from the device.
+
+            Device implementations of get_state or get_info cannot cause a call to device_ref() as that would
+            trigger a state request and cause a loop.
+
+            Valid values for reason:
+                DEVICE - the device has initiaited the update
+
+
         """
         if self.device_id is None:
             # print("No device id")
             return
         cmd.writeLog(f"State: {self.name} {state} {info}\n")
-        cmd.updateDevice(self.device_ref(state, info))
+        cmd.updateDevice(self.device_ref(reason, state, info))
 
     @staticmethod
     def dialog_class():
@@ -439,6 +459,7 @@ class DeviceCollection(QtCore.QObject):
 
     @staticmethod
     def all_classes():
+        """ Search the peel_devices and peel_user_devices module for any devices that subclass PeelDeviceBase """
         for device_module in pkgutil.iter_modules([os.path.split(__file__)[0]]):
             dm = importlib.import_module("peel_devices." + device_module.name)
             for name, klass in inspect.getmembers(dm, inspect.isclass):
@@ -467,6 +488,8 @@ class DeviceCollection(QtCore.QObject):
 
     def add_device(self, device):
 
+        """ Add a new device to the list, called by the Add Device UI """
+
         if not isinstance(device, PeelDeviceBase):
             raise ValueError("Not a device while adding: " + str(device))
 
@@ -477,21 +500,35 @@ class DeviceCollection(QtCore.QObject):
         print("Added device: %s (%s)" % (device.name, device.device()))
 
     def remove_all(self):
+        """ Cleanly remove all devices """
         for d in self.devices:
             d.teardown()
         self.devices = []
 
     def remove(self, device_id):
-        for d in self.devices:
-            if d.device_id == device_id:
-                d.teardown()
-                self.devices.remove(d)
-                break
+        """ cleanly remove a device from the current list """
+        device = self.from_id(device_id)
+        if device:
+            device.teardown()
+            self.devices.remove(device)
 
-    def update_all(self):
-        cmd.setDevices([i.device_ref() for i in self.devices])
+    def update_all(self, reason):
+        """ push a status update for all devices """
+        cmd.setDevices([i.device_ref(reason) for i in self.devices])
+
+    def refresh(self, device_id):
+        """ push a status update for a single device """
+        device = self.from_id(device_id)
+        if device:
+            cmd.updateDevice(device.device_ref(reason="REFRESH"))
+
+    def reconnect(self, device_id):
+        device = self.from_id(device_id)
+        if device:
+            device.connect_device()
 
     def teardown(self):
+        """ We are shutting down - stop all devices """
         for d in self.devices:
             try:
                 d.teardown()
@@ -499,6 +536,7 @@ class DeviceCollection(QtCore.QObject):
                 print("Incomplete device  (teardown): " + d.name)
 
     def get_data(self):
+        """ get the key value data for all devices, used to save the json data """
         data = []
         for d in self.devices:
             try:
@@ -509,6 +547,7 @@ class DeviceCollection(QtCore.QObject):
         return data
 
     def unique_name(self, device_name):
+        """ Generate a unique name for the device """
         name = device_name
         i = 1
         while name in [i.name for i in self.devices]:
@@ -516,10 +555,10 @@ class DeviceCollection(QtCore.QObject):
             i += 1
         return name
 
-    def from_id(self, id):
-        for d in self.devices:
-            if d.device_id == id:
-                return d
+    def from_id(self, device_id):
+        for device in self.devices:
+            if device.device_id == device_id:
+                return device
 
     def __len__(self):
         return len(self.devices)
@@ -551,7 +590,7 @@ class DeviceCollection(QtCore.QObject):
                     continue
 
                 if class_name not in klass:
-                    print("Could not find device class for: " + name)
+                    print("Could not find device class for: " + class_name)
                     error = True
                     continue
 
@@ -582,146 +621,7 @@ class DeviceCollection(QtCore.QObject):
             QtWidgets.QMessageBox.warning(cmd.getMainWindow(), "Error", msg)
 
 
-class TcpDevice(PeelDeviceBase):
 
-    def __init__(self, name):
-        super(TcpDevice, self).__init__(name)
-        self.host = None
-        self.port = None
-        self.tcp = None
-        self.current_take = None
-        self.error = None
-        self.connected_state = None  # ONLINE, OFFLINE, ERROR
-        self.device_state = None  # ONLINE, PLAYING, RECORDING
-        self.info = None
-
-    def send(self, msg):
-        #if self.connected_state != "CONNECTED":
-        #    self.tcp.connectToHost(self.host, self.port)
-        print(msg.strip())
-        self.tcp.write(msg.encode("utf8"))
-
-    def do_read(self):
-        raise NotImplementedError
-
-    def do_connected(self):
-        self.connected_state = "ONLINE"
-        self.update_state(self.connected_state, "")
-
-    def do_disconnected(self):
-        self.connected_state = "OFFLINE"
-        self.update_state(self.connected_state, "")
-
-    def do_error(self, err):
-        print("ERROR", str(err))
-        self.connected_state = "ERROR"
-        if err == QAbstractSocket.ConnectionRefusedError:
-            self.update_state(self.connected_state, "Connection Refused")
-        elif err == QAbstractSocket.SocketError.RemoteHostClosedError:
-            self.update_state(self.connected_state, "Host Closed")
-        elif err == QAbstractSocket.SocketError.HostNotFoundError:
-            self.update_state(self.connected_state, "Host Not Found")
-        elif err == QAbstractSocket.SocketError.SocketAccessError:
-            self.update_state(self.connected_state, "Access Error")
-        elif err == QAbstractSocket.SocketError.SocketResourceError:
-            self.update_state(self.connected_state, "Resource Error")
-        elif err == QAbstractSocket.SocketError.SocketTimeoutError:
-            self.update_state(self.connected_state, "Timeout")
-        elif err == QAbstractSocket.SocketError.DatagramTooLargeError:
-            self.update_state(self.connected_state, "Overflow")
-        elif err == QAbstractSocket.SocketError.NetworkError:
-            self.update_state(self.connected_state, "No Connection")
-        elif err == QAbstractSocket.SocketError.AddressInUseError:
-            self.update_state(self.connected_state, "Address in use")
-        elif err == QAbstractSocket.SocketError.SocketAddressNotAvailableError:
-            self.update_state(self.connected_state, "Unavailable")
-        elif err == QAbstractSocket.SocketError.UnsupportedSocketOperationError:
-            self.update_state(self.connected_state, "Unsupported")
-        elif err == QAbstractSocket.SocketError.ProxyAuthenticationRequiredError:
-            self.update_state(self.connected_state, "Proxy Required")
-        elif err == QAbstractSocket.SocketError.SslHandshakeFailedError:
-            self.update_state(self.connected_state, "SSL HS Error")
-        elif err == QAbstractSocket.SocketError.UnfinishedSocketOperationError:
-            self.update_state(self.connected_state, "Unfinished Error")
-        elif err == QAbstractSocket.SocketError.ProxyConnectionRefusedError:
-            self.update_state(self.connected_state, "Proxy Refused")
-        elif err == QAbstractSocket.SocketError.ProxyConnectionClosedError:
-            self.update_state(self.connected_state, "Proxy Closed")
-        elif err == QAbstractSocket.SocketError.ProxyConnectionTimeoutError:
-            self.update_state(self.connected_state, "Proxy Timeout")
-        elif err == QAbstractSocket.SocketError.ProxyNotFoundError:
-            self.update_state(self.connected_state, "Proxy Not Found")
-        elif err == QAbstractSocket.SocketError.ProxyProtocolError:
-            self.update_state(self.connected_state, "Proxy tx Error")
-        elif err == QAbstractSocket.SocketError.OperationError:
-            self.update_state(self.connected_state, "Op Error")
-        elif err == QAbstractSocket.SocketError.SslInternalError:
-            self.update_state(self.connected_state, "SSL Error")
-        elif err == QAbstractSocket.SocketError.SslInvalidUserDataError:
-            self.update_state(self.connected_state, "SSL User Error")
-        elif err == QAbstractSocket.SocketError.TemporaryError:
-            self.update_state(self.connected_state, "Temp Error")
-        elif err == QAbstractSocket.SocketError.UnknownSocketError:
-            self.update_state(self.connected_state, "Unknown")
-        else:
-            self.update_state(self.connected_state, str(err))
-
-    def as_dict(self):
-        return {'name': self.name,
-                'host': self.host,
-                'port': self.port}
-
-    def teardown(self):
-        if self.tcp is not None:
-            if self.connected_state == "CONNECTED":
-                self.tcp.disconnectFromHost()
-            self.tcp.close()
-            self.tcp = None
-
-    def reconfigure(self, name, **kwargs):
-
-        self.teardown()
-
-        self.host = kwargs.get('host')
-        self.port = kwargs.get('port')
-
-        self.current_take = None
-        self.error = None
-        self.connected_state = None
-        self.name = name
-
-        return True
-
-    def connect_device(self):
-
-        print(f"TCP Connecting to {self.host} {self.port}")
-        self.tcp = QTcpSocket()
-        self.tcp.connected.connect(self.do_connected)
-        self.tcp.disconnected.connect(self.do_disconnected)
-        self.tcp.readyRead.connect(self.do_read)
-        self.tcp.errorOccurred.connect(self.do_error)
-        self.tcp.connectToHost(self.host, self.port)
-
-    def get_state(self):
-
-        if not self.enabled:
-            return "OFFLINE"
-
-        if self.error is not None:
-            return "ERROR"
-
-        if self.connected_state in ["OFFLINE", "ERROR"]:
-            return self.connected_state
-
-        if self.device_state is None:
-            return "OFFLINE"
-
-        return self.device_state
-
-    def get_info(self):
-        if self.error is not None:
-            return self.error
-        return ""
 
 
 class FileItem(object):

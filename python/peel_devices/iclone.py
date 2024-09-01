@@ -53,10 +53,10 @@ class IClone(PeelDeviceBase):
             self.tcp.close()
             self.tcp = None
 
-    def get_state(self):
+    def get_state(self, reason=None):
         return self.state
 
-    def get_info(self):
+    def get_info(self, reason=None):
         return self.info
 
     def send_tcp_command(self, command):
@@ -73,7 +73,7 @@ class IClone(PeelDeviceBase):
             self.info = str(e)
             print(f"{self.name} failed to '{command}': {e}")
         finally:
-            self.update_state(self.state)
+            self.update_state(self.state, "")
 
     def command(self, command, arg):
         print(f"IClone command: {command} arg: {arg}")

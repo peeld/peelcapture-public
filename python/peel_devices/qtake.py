@@ -79,10 +79,10 @@ class QTake(PeelDeviceBase):
             self.udp.close()
             self.udp = None
 
-    def get_state(self):
+    def get_state(self, reason=None):
         return self.state
 
-    def get_info(self):
+    def get_info(self, reason=None):
         return self.info
 
     def send_udp_command(self, xml, command):
@@ -100,7 +100,7 @@ class QTake(PeelDeviceBase):
             msg += "Check that PeelCapture is enabled as a stream client in the STREAM toolbar."
             print(msg)
 
-        self.update_state(self.state)
+        self.update_state(self.state, "")
 
     def command(self, command, arg):
 

@@ -138,7 +138,7 @@ class MotionBuilderDevice(PeelDeviceBase):
         self.udp.start()
         self.udp.state_change.connect(self.do_state)
         self.udp.send("PING")
-        self.update_state("OFFLINE")
+        self.update_state("OFFLINE", "")
 
     def command(self, command, arg):
 
@@ -160,7 +160,7 @@ class MotionBuilderDevice(PeelDeviceBase):
         self.current_state = state
         self.update_state(state, "")
 
-    def get_state(self):
+    def get_state(self, reason=None):
         if self.udp is None:
             return "ERROR"
         return self.current_state

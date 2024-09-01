@@ -274,11 +274,11 @@ class PeelRecorder(PeelDeviceBase):
     def __str__(self):
         return self.name
 
-    def get_info(self):
+    def get_info(self, reason=None):
         """ return a string to show the state of the device in the main ui """
         return str(self.tcp)
 
-    def get_state(self):
+    def get_state(self, reason=None):
         """ should return "OFFLINE", "ONLINE", "RECORDING" or "ERROR"
             avoid calling update_state() here.  Used to determine if this device
             is working as intended.

@@ -60,7 +60,7 @@ class MovieRecorder(PeelDeviceBase):
     def connect_device(self):
         self.update_state()
 
-    def get_state(self):
+    def get_state(self, reason=None):
 
         if not self.enabled:
             return "OFFLINE"
@@ -76,7 +76,7 @@ class MovieRecorder(PeelDeviceBase):
 
         return "ONLINE"
 
-    def get_info(self):
+    def get_info(self, reason=None):
 
         try:
             sources = requests.get(f"http://{self.host}:8080/sources").json()
@@ -107,7 +107,7 @@ class MovieRecorder(PeelDeviceBase):
 
                 requests.put(f"http://{self.host}:8080/sources/record", json=[i["unique_id"] for i in devices])
 
-                self.state = "RECORDING"
+                self.state = "DEVICE"
                 self.update_state(self.state, str(len(devices)) + " sources")
 
             if command == "stop":
@@ -119,7 +119,7 @@ class MovieRecorder(PeelDeviceBase):
         except IOError as e:
             print("Error sending to Movie Recorder: " + str(e))
             self.state = "ERROR"
-            self.update_state(self.state, "")
+            self.update_state("ERROR", str(e))
 
     @staticmethod
     def device():
