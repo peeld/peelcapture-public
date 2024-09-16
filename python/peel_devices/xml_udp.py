@@ -40,7 +40,7 @@ class XmlUdpListenThread(QtCore.QThread):
 
                 readable, _, _ = select.select([self.listen], [], [], 2.0)
                 if not self.listen in readable:
-                    print("No data")
+                    # print("No data")
                     continue
 
                 if self.listen.fileno() == -1:

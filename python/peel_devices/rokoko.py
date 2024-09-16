@@ -15,7 +15,7 @@ class RokokoWidget(SimpleDeviceWidget):
         self.enter_clip_editing.setToolTip("Enter Clip Editing Mode On Stop Recording")
         self.form_layout.addRow("Enter Clip Editing", self.enter_clip_editing)
 
-        link = 'https://support.rokoko.com/hc/en-us/articles/15566313142161-UDP-Trigger-Messages'
+        link = 'https://support.rokoko.com/hc/en-us/articles/14905272191505-Rokoko-Studio-UDP-Trigger-Messages'
         msg = '<P><A HREF="' + link + '">Documentation</P>'
         self.set_info(msg)
 

@@ -473,6 +473,7 @@ void MotivePlugin::inFrame(sFrameOfMocapData* frame)
 	{
 		int subframe;
 		int h = 0, m = 0, s = 0, f = 0;
+
 		if (NatNet_DecodeTimecode(frame->Timecode, frame->TimecodeSubframe, &h, &m, &s, &f, &subframe) == ErrorCode_OK)
 		{
 			if (f == 0 && lastFrameValue > 0) tcRate = lastFrameValue + 1;
