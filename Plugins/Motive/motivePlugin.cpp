@@ -474,11 +474,22 @@ void MotivePlugin::inFrame(sFrameOfMocapData* frame)
 		int subframe;
 		int h = 0, m = 0, s = 0, f = 0;
 
-		if (NatNet_DecodeTimecode(frame->Timecode, frame->TimecodeSubframe, &h, &m, &s, &f, &subframe) == ErrorCode_OK)
+		auto err = NatNet_DecodeTimecode(frame->Timecode, frame->TimecodeSubframe, &h, &m, &s, &f, &subframe);
+
+		/*
+		if(f != lastFrameValue)
+		{
+			std::ostringstream oss;
+			oss << "Timecode: " << frame->Timecode << " " << h << ":" << m << ":" << s << ":" << f;
+			logMessage(oss.str().c_str());
+		}*/
+
+		if (err == ErrorCode_OK)
 		{
 			if (f == 0 && lastFrameValue > 0) tcRate = lastFrameValue + 1;
 
-			if ((tc_h != h || tc_m != m || tc_s != s || tc_f != f) && tcRate != 0) {
+			if ((tc_h != h || tc_m != m || tc_s != s || tc_f != f) && tcRate != 0 ) {
+
 				timecode(h, m, s, f, tcRate, false);
 				tc_h = h;
 				tc_m = m;
@@ -486,6 +497,12 @@ void MotivePlugin::inFrame(sFrameOfMocapData* frame)
 				tc_f = f;
 			}
 			lastFrameValue = f;
+		}
+		else
+		{
+			std::ostringstream oss;
+			oss << "Motive timecode error: " << this->errorStr(err);
+			logMessage(oss.str().c_str());
 		}
 	}
 }

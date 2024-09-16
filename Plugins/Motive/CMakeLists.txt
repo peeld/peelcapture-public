@@ -13,9 +13,9 @@ target_include_directories(${PluginName} PUBLIC
 	${CMAKE_CURRENT_LIST_DIR}/MocapApi/include
 	)
 
-if(EXISTS "D:/BUILD/source/natnetsdk")
-set(natnet_dir "D:/BUILD/source/natnetsdk")
-endif()
+#if(EXISTS ${natnet_dir})
+#set(natnet_dir "D:/BUILD/source/natnetsdk")
+#endif()
 
 
 target_include_directories(${PluginName} PUBLIC "${natnet_dir}/windows/include")
