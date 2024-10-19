@@ -36,11 +36,6 @@ class PiWidget(SimpleDeviceWidget):
 
 class Pi(TcpDevice):
 
-    """ This device tests device functionality by running a thread when the device is in record mode
-    The thread may run for 5 seconds and cause a failure state, or it may wait for a stop command.
-    The thread and the device will both output some text to the log.
-    """
-
     def __init__(self, name="PiSlate"):
         super(Pi, self).__init__(name)
         self.host = "192.168.1.100"

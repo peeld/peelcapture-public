@@ -27,7 +27,7 @@ public:
 
     std::thread thread;
 
-    ViconDataStreamSDK::CPP::Client *client;
+    std::shared_ptr<ViconDataStreamSDK::CPP::Client> client;
 
     std::string host;
 

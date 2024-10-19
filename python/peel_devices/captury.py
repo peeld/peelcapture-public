@@ -20,10 +20,6 @@ class MyDevice(PeelDeviceBase):
         if self.plugin_id == -1:
             raise RuntimeError("Could not create captury device")
 
-    def set_enabled(self, value):
-        super().set_enabled(value)
-        cmd.setDeviceEnabled(self.plugin_id, value)
-
     @staticmethod
     def device():
         return "captury"

@@ -116,21 +116,20 @@ void ViconPlugin::run()
 
     while (running)
     {
-        if (client == nullptr)
+        if (!client)
         {
             if (!messageFlag) {
                 logMessage("Connecting to vicon\n");
                 messageFlag = true;
             }
 
-            client = new ViconDataStreamSDK::CPP::Client();
+            client = std::make_shared< ViconDataStreamSDK::CPP::Client>();
 
             ConnectResult = client->Connect(host);
 
             if (running && ConnectResult.Result != Result::Success)
             {
-                delete client;
-                client = nullptr;
+                client.reset();
                 std::this_thread::sleep_for(2000ms);
                 continue;
             }
@@ -144,7 +143,7 @@ void ViconPlugin::run()
         if (FrameResult.Result == Result::NotConnected)
         {
             logMessage("Vicon Disconnected");            
-            delete client;
+            client.reset();
             client = nullptr;
             updateState("OFFLINE", "");
             continue;
@@ -231,6 +230,7 @@ void ViconPlugin::run()
             }
         }
     }
+    client.reset();
 }
 
 

@@ -25,6 +25,19 @@
 from peel_devices import PeelDeviceBase, SimpleDeviceWidget
 from PySide6 import QtCore, QtWidgets
 import socket
+import select
+import time
+from PeelApp import cmd
+
+
+def receive_message(client_socket):
+    try:
+        message = client_socket.recv(1024)
+        if not message:
+            return False
+        return message
+    except:
+        return False
 
 
 class SocketThread(QtCore.QThread):
@@ -35,50 +48,108 @@ class SocketThread(QtCore.QThread):
         super(SocketThread, self).__init__()
         self.host = host
         self.port = port
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.running = True
+        self.connected = False
         self.messages = []
-        self.error_flag = None
+
+    def close_socket(self):
+        try:
+            if self.connected:
+                self.socket.shutdown(socket.SHUT_RDWR)
+                self.connected = False
+        except OSError as e:
+            print(e)
+
+        try:
+            self.socket.close()
+        except OSError as e:
+            print(e)
 
     def run(self):
 
+        self.connected = False
+
+        remaining = b''
+
         while self.running:
 
-            try:
-                ret = self.socket.recvfrom(1024, 0)
-            except IOError as e:
-                self.state_change.emit("OFFLINE")
-                print("offline")
-                return
+            if not self.connected:
+                try:
+                    self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    self.socket.connect((self.host, self.port))
+                except IOError as e:
+                    cmd.writeLog(f"MOBU: Connection failed: {e}, retrying in 2 seconds...")
+                    time.sleep(2)
+                    continue
 
-            if not ret:
-                print(".")
-                continue
-
-            if ret[0] == b'RECORDING\x00':
-                self.state_change.emit("RECORDING")
-
-            if ret[0] == b'STOPPED\x00':
+                self.connected = True
                 self.state_change.emit("ONLINE")
 
-            if ret[0] == b'HELLO\x00':
-                self.state_change.emit("ONLINE")
+            while self.running and self.connected:
+
+                try:
+
+                    read_list, _, err_list = select.select([self.socket], [], [self.socket], 2)
+
+                    if self.socket in err_list:
+                        cmd.writeLog("MOBU: Socket error - closing connection")
+                        self.close_socket()
+                        self.state_change.emit("OFFLINE")
+                        break
+
+                except select.error as e:
+                    cmd.writeLog(f"MOBU: Select error: {e}")
+                    self.close_socket()
+                    self.state_change.emit("OFFLINE")
+                    break
+
+                if self.socket not in read_list:
+                    continue
+
+                try:
+                    message = self.socket.recv(1024)
+                except IOError as e:
+                    cmd.writeLog("MOBU: recv error")
+                    self.close_socket()
+                    self.state_change.emit("OFFLINE")
+                    break
+
+                if not message:
+                    cmd.writeLog("MOBU: error - no data")
+                    self.close_socket()
+                    self.state_change.emit("OFFLINE")
+                    break
+
+                if remaining:
+                    message = remaining + message
+
+                while True:
+                    pos = message.find(b"\n")
+                    if pos == -1:
+                        remaining = message
+                        break
+
+                    line = message[:pos]
+                    message = message[pos+1:]
+
+                    cmd.writeLog("MOBU MESSAGE: " + message.decode('utf-8'))
+
+                    if line == b'RECORDING':
+                        self.state_change.emit("RECORDING")
+
+                    if line == b'PLAYING':
+                        self.state_change.emit("PLAYING")
+
+                    if line == b'STOPPED':
+                        self.state_change.emit("ONLINE")
+
+        cmd.writeLog("MOBU: Thread finished")
 
     def send(self, msg):
-        self.socket.sendto(msg.encode("utf8"), (self.host, self.port))
-
-    def close_socket(self):
-
-        if self.socket is None:
-            print("Closing a closed socket")
-            return
-
-        try:
-            self.socket.shutdown(socket.SHUT_RDWR)
-            self.socket.close()
-            self.socket = None
-        except IOError as e:
-            print("Error closing Mobu Device socket: " + str(e))
+        msg += "\n"
+        if self.connected:
+            self.socket.send(msg.encode("utf8"))
 
     def teardown(self):
         self.close_socket()
@@ -107,7 +178,7 @@ class MotionBuilderDevice(PeelDeviceBase):
         super(MotionBuilderDevice, self).__init__(name)
         self.recording = None
         self.current_take = None
-        self.udp = None
+        self.socket_thread = None
         self.current_state = None
         self.host = "127.0.0.1"
         self.port = 8888
@@ -117,14 +188,14 @@ class MotionBuilderDevice(PeelDeviceBase):
         return "mobu-device"
 
     def as_dict(self):
-        if self.udp is None:
+        if self.socket_thread is None:
             return {'name': self.name,
                     'host': None,
                     'port': None}
         else:
             return {'name': self.name,
-                    'host': self.udp.host,
-                    'port': self.udp.port}
+                    'host': self.socket_thread.host,
+                    'port': self.socket_thread.port}
 
     def reconfigure(self, name, **kwargs):
         self.name = name
@@ -134,34 +205,36 @@ class MotionBuilderDevice(PeelDeviceBase):
 
     def connect_device(self):
         self.teardown()
-        self.udp = SocketThread(self.host, self.port)
-        self.udp.start()
-        self.udp.state_change.connect(self.do_state)
-        self.udp.send("PING")
+        self.socket_thread = SocketThread(self.host, self.port)
+        self.socket_thread.start()
+        self.socket_thread.state_change.connect(self.do_state)
         self.update_state("OFFLINE", "")
 
     def command(self, command, arg):
 
+        if not self.enabled:
+            return
+
         if command == "record":
-            self.udp.send("RECORD=" + arg)
+            self.socket_thread.send("RECORD=" + arg)
 
         if command == 'stop':
-            self.udp.send("STOP")
+            self.socket_thread.send("STOP")
 
         if command == 'play':
-            self.udp.send("PLAY")
+            self.socket_thread.send("PLAY=" + arg)
 
     def teardown(self):
-        if self.udp:
-            self.udp.teardown()
-            self.udp = None
+        if self.socket_thread:
+            self.socket_thread.teardown()
+            self.socket_thread = None
 
     def do_state(self, state):
         self.current_state = state
         self.update_state(state, "")
 
     def get_state(self, reason=None):
-        if self.udp is None:
+        if self.socket_thread is None:
             return "ERROR"
         return self.current_state
 

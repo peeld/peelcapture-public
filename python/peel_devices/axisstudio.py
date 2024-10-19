@@ -24,10 +24,6 @@ class AxisStudio(PeelDeviceBase):
         if self.plugin_id == -1:
             raise RuntimeError("Could not create plugin device")
 
-    def set_enabled(self, value):
-        super().set_enabled(value)
-        cmd.setDeviceEnabled(self.plugin_id, value)
-
     @staticmethod
     def device():
         return "axisstudio"

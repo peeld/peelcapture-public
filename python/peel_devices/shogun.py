@@ -128,7 +128,8 @@ class ShogunWidget(SimpleDeviceWidget):
 
         data["timecode"] = self.timecode_cb.isChecked()
         data["subjects"] = self.subjects_cb.isChecked()
-        super().update_device(device, data)
+
+        return super().update_device(device, data)
 
     def do_add(self):
 
@@ -171,19 +172,20 @@ class ViconShogun(PeelDeviceBase):
                 'host': self.host,
                 'set_capture_folder': self.set_capture_folder,
                 'timecode': self.timecode,
-                'subjects': self.subjects
+                'subjects': self.subjects,
                 }
 
-    def reconfigure(self, name, host=None, set_capture_folder=False, timecode=False, subjects=False):
+    def reconfigure(self, name, **kwargs):
 
-        cmd.writeLog(f"Shogun reconfigure {name} {host} {set_capture_folder} {timecode} {subjects}\n")
-        print(f"Shogun reconfigure {name} {host} {set_capture_folder} {timecode} {subjects} ")
+        cmd.writeLog("Shogun reconfigure\n")
+        cmd.writeLog(str(kwargs))
 
         self.name = name
-        self.host = host
-        self.timecode = timecode
-        self.subjects = subjects
-        self.set_capture_folder = set_capture_folder
+        self.host = kwargs.get("host", "")
+        self.timecode = kwargs.get("timecode", True)
+        self.subjects = kwargs.get("subjects", True)
+        self.set_capture_folder = kwargs.get("set_capture_folder", "")
+        self.error = None
 
         return True
 
@@ -204,11 +206,15 @@ class ViconShogun(PeelDeviceBase):
             self.client = Client(self.host)
             self.capture = CaptureServices(self.client)
             self.playback = PlaybackServices(self.client)
+            self.error = None
+
         except Exception as e:
             self.client = None
             self.capture = None
             self.playback = None
-            cmd.writeLog("Shogun could not connect: " + str(e))
+            self.error = "Could not connect"
+
+            print("Shogun could not connect: " + str(e))
 
     def __str__(self):
         return self.name
@@ -218,9 +224,6 @@ class ViconShogun(PeelDeviceBase):
 
     def get_state(self, reason=None):
 
-        if self.error is not None:
-            return "ERROR"
-
         if not self.enabled:
             return "OFFLINE"
 
@@ -228,20 +231,21 @@ class ViconShogun(PeelDeviceBase):
             return "OFFLINE"
 
         try:
-            cmd.writeLog("Getting shogun state\n")
+            cmd.writeLog("Getting shogun state...\n")
             ret, id, state = self.capture.latest_capture_state()
-            cmd.writeLog(f"SHOGUN STATE: {ret} {id} {state}")
+            cmd.writeLog(f"SHOGUN Capture state: {ret} {id} {state}\n")
+            print(state)
             if state in [CaptureServices.EState.EStarted]:
                 cmd.writeLog("Shogun is recording\n")
                 return "RECORDING"
 
             ret, state = self.playback.state()
-            print(ret, state)
+            cmd.writeLog(f"Shogun playback state: {ret}, {state}\n")
             if state.mode == PlaybackServices.EOutputMode.ELive:
-                cmd.writeLog("Shogun is online")
+                cmd.writeLog("Shogun is online\n")
                 return "ONLINE"
 
-            cmd.writeLog("Shogun is offline")
+            cmd.writeLog("Shogun is offline\n")
             return "OFFLINE"
 
         except RPCError as e:
@@ -260,7 +264,8 @@ class ViconShogun(PeelDeviceBase):
         if self.error is not None:
             return self.error
 
-        return f"{len(self.takes)} takes"
+        return ""
+        # f"{len(self.takes)} takes"
 
     def list_takes(self):
         return self.takes
@@ -293,12 +298,11 @@ class ViconShogun(PeelDeviceBase):
 
     def command(self, command, arg):
 
-        # print("SHOGUN", command, arg)
-
-        update = False
+        if not self.enabled:
+            return
 
         if self.client is None:
-            print("No client")
+            cmd.writeLog("Shogun: No client")
             return
 
         if command == "play" and self.record_id is None:
@@ -315,7 +319,6 @@ class ViconShogun(PeelDeviceBase):
                 self.playback.play()
                 self.play_id = arg
 
-
         if command == "record":
             ret = self.capture.set_capture_name(arg)
             if not ret:
@@ -330,6 +333,7 @@ class ViconShogun(PeelDeviceBase):
                 return
             else:
                 print("Shogun recording ID: " + str(self.record_id))
+                self.error = ""
 
             # State is queried by timer below.
 
@@ -364,10 +368,11 @@ class ViconShogun(PeelDeviceBase):
         if command in ["play", "record", "stop"]:
             # Delay the update state as shogun does not respond with the correct
             # state right away
-            QtCore.QTimer.singleShot(250, self.do_update_state)
+            QtCore.QTimer.singleShot(500, self.do_update_state)
 
     def do_update_state(self):
-        self.update_state()
+        print("Getting shogun state")
+        self.update_state(self.get_state(), self.get_info())
 
     @staticmethod
     def dialog_class():

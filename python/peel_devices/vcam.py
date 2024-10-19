@@ -28,7 +28,7 @@ class VCamListenThread(QtCore.QThread):
         try:
             self.listen.bind((self.host, self.port))
         except IOError as e:
-            cmd.writeLog(f"Could not bind to {self.host}:{self.port}")
+            cmd.writeLog(f"VCAM Could not bind to {self.host}:{self.port}")
             self.running = False
             raise e
 
@@ -68,9 +68,13 @@ class VCamSocketThread(QtCore.QThread):
         self.remote = None
         self.allow_record = record
         self.allow_play = play
+        self.recording = False
+        self.playing = False
 
     def stop(self):
         self.running = False
+        if self.socket:
+            self.socket.close()
 
     def run(self):
         self.running = True
@@ -97,6 +101,7 @@ class VCamSocketThread(QtCore.QThread):
             self.state_change.emit()
 
             while self.running:
+                print("READING")
                 if not self.readone():
                     break
 
@@ -120,9 +125,19 @@ class VCamSocketThread(QtCore.QThread):
         if self.allow_record:
             if command == "record":
                 cmd.record()
+                self.recording = True
 
             if command == "recordstop":
                 cmd.stop()
+                self.recording = False
+
+            if command == "recordtoggle":
+                if self.recording:
+                    cmd.stop()
+                    self.recording = False
+                else:
+                    cmd.record()
+                    self.recording = True
 
         if self.allow_play:
             if command == "play":
@@ -130,6 +145,14 @@ class VCamSocketThread(QtCore.QThread):
 
             if command == "playstop":
                 cmd.stop()
+
+            if command == "playtoggle":
+                if self.playing:
+                    cmd.stop()
+                    self.playing = False
+                else:
+                    cmd.play()
+                    self.playing = True
 
         if command == "prev":
             cmd.prev()
@@ -148,6 +171,8 @@ class VCamDialog(SimpleDeviceWidget):
         super().__init__(settings, "PeelVCam", has_host=True, has_port=True,
                          has_broadcast=False, has_listen_ip=True, has_listen_port=True)
 
+        self.set_info("Leave address blank to connect automatically.")
+
         self.record_cb = QtWidgets.QCheckBox("Record", self)
         self.play_cb = QtWidgets.QCheckBox("Play", self)
         self.form_layout.addRow("", self.record_cb)
@@ -156,8 +181,11 @@ class VCamDialog(SimpleDeviceWidget):
     def populate_from_device(self, device):
         super().populate_from_device(device)
 
-        self.record_cb.setChecked(device.allow_record)
-        self.play_cb.setChecked(device.allow_play)
+        print("Record: " + str(device.allow_record))
+        print("Play: " + str(device.allow_play))
+
+        self.record_cb.setChecked(device.allow_record is True)
+        self.play_cb.setChecked(device.allow_play is True)
 
     def update_device(self, device, data=None):
 
@@ -165,7 +193,8 @@ class VCamDialog(SimpleDeviceWidget):
             'record': self.record_cb.isChecked(),
             'play': self.play_cb.isChecked()
         }
-        super().update_device(device, data)
+
+        return super().update_device(device, data)
 
 
 class VCam(PeelDeviceBase):
@@ -174,12 +203,12 @@ class VCam(PeelDeviceBase):
         super(VCam, self).__init__(name)
         self.recording = False
         self.playing = False
-        self.host = "192.168.1.100"
-        self.port = ""
+        self.host = ""
+        self.port = 0
         self.socket_thread = None
         self.listen_thread = None
-        self.allow_record = None
-        self.allow_play = None
+        self.allow_record = True
+        self.allow_play = True
         self.listen_ip = None
         self.listen_port = 9158
 
@@ -210,27 +239,22 @@ class VCam(PeelDeviceBase):
 
         return True
 
+    def connect_tcp(self):
+        self.socket_thread = VCamSocketThread(self.host, self.port, self.allow_record, self.allow_play)
+        self.socket_thread.state_change.connect(self.do_state)
+        self.socket_thread.start()
+
     def connect_device(self):
 
-        if self.host and self.port:
-            self.socket_thread = VCamSocketThread(self.host, self.port, self.allow_record, self.allow_play)
-            self.socket_thread.state_change.connect(self.do_state)
-            self.socket_thread.start()
+        self.teardown()
 
-        if self.listen_thread is not None:
-            self.listen_thread.kill()
-            self.listen_thread.wait()
-            del self.listen_thread
-            self.listen_thread = None
+        if self.host and self.port:
+            self.connect_tcp()
 
         if self.listen_ip is not None and self.listen_port is not None:
             self.listen_thread = VCamListenThread(self.listen_ip, self.listen_port)
             self.listen_thread.message.connect(self.do_message)
             self.listen_thread.start()
-
-        if self.listen_thread:
-            # Use the listen thread socket so the from address is set
-            self.udp = self.listen_thread.listen
 
         self.update_state()
 
@@ -238,14 +262,13 @@ class VCam(PeelDeviceBase):
         self.update_state()
 
     def do_message(self, message, host):
+        # We have received a udp packet from the peel cam app.  If the socket thread
+        # is not running, make a new connection
         if self.socket_thread is None and message.startswith("VCAM:"):
-            self.reconfigure(name=self.name,
-                             host=host,
-                             port=int(message[5:]),
-                             listen_ip=self.listen_ip,
-                             listen_port=self.listen_port,
-                             record=self.allow_record,
-                             play=self.allow_play)
+
+            self.host = host
+            self.port = int(message[5:])
+            self.connect_tcp()
 
     def __str__(self):
         return self.name
@@ -297,31 +320,29 @@ class VCam(PeelDeviceBase):
 
         if command == "play":
             self.send("TRANSPORT-PLAY")
-            if self.udp:
-                self.udp.sendto(b"TRANSPORT-PLAY", (self.host, self.port))
-
-        # print(command)
 
     def teardown(self):
         """ Device is being deleted, shutdown gracefully """
         if self.socket_thread:
+            print("Closing socket thread")
             self.socket_thread.stop()
-            self.socket_thread.join()
+            self.socket_thread.wait()
             self.socket_thread = None
 
         if self.listen_thread:
+            print("Closing listen thread")
             self.listen_thread.stop()
-            self.listen_thread.join()
+            self.listen_thread.wait()
             self.listen_thread = None
         pass
 
     def thread_join(self):
         """ Called when the main app is shutting down - block till the thread is finished """
         if self.socket_thread:
-            self.socket_thread.join()
+            self.socket_thread.wait()
 
         if self.listen_thread:
-            self.listen_thread.join()
+            self.listen_thread.wait()
 
     @staticmethod
     def dialog_class():

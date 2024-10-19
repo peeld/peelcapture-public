@@ -4,7 +4,7 @@ import threading
 import xml.etree.ElementTree as et
 from PySide6 import QtWidgets, QtCore
 import select
-
+from PeelApp import cmd
 
 class XmlUdpListenThread(QtCore.QThread):
 
@@ -337,6 +337,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             msg = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>' + \
                   '<CaptureStart>' + \
                   '<Name VALUE="%s"/>' % self.current_take + \
+                  '<TimeCode VALUE="%s"/>' % cmd.getTimecode() + \
                   '</CaptureStart>'
 
         elif self.format == 'XSENS':
@@ -377,6 +378,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
                 + '\t<PacketID VALUE="%d"/>\n' % self.packet_id \
                 + '</CaptureStart>\n'
 
+        print(msg)
         self.send(msg)
 
     def send(self, msg):

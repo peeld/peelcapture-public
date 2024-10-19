@@ -306,6 +306,7 @@ def set_motive_status(state, msg):
 
 
 def set_device_enable(n, state):
+    """ Called by the main app to update a device object to say that it is to pause operations """
     global DEVICES
 
     if n < 0 or n >= len(DEVICES):

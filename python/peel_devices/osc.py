@@ -350,8 +350,8 @@ class UnrealDialog(peel_devices.SimpleDeviceWidget):
         msg = '<P><A HREF="' + link + '">Documentation</A></P>'
         msg += "<P>Enable Switchboard and OSC plugins in Unreal</P>"
         msg += "<P>In the Unreal project settings, enable 'Start an OSC Server when the editor launches'</P>"
-        msg += "<P>The 'OSC Server Address' listen port in unreal "
-        msg += "Restart Unreal to enable the osc server"
+        msg += "<P>The 'OSC Server Address' listen port in unreal</P>"
+        msg += "<P>Restart Unreal to enable the osc server</P>"
         self.set_info(msg)
 
 

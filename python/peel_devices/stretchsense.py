@@ -32,7 +32,7 @@ class StretchSense(XmlUdpDeviceBase):
     """ Instantiation of and xml udp device for Stretchsense devices """
 
     def __init__(self, **kwargs):
-        super(StretchSense, self).__init__(**kwargs)
+        super(StretchSense, self).__init__(name="Stretchsense")
 
     @staticmethod
     def device():

@@ -40,7 +40,6 @@ except ImportError:
 from peel_devices import device_util
 
 
-
 class BaseDeviceWidget(QtWidgets.QWidget):
     """ Base class used as a widget when adding a new device """
     def __init__(self, settings):
@@ -138,7 +137,8 @@ class SimpleDeviceWidget(BaseDeviceWidget):
         self.setLayout(self.form_layout)
 
     def populate_from_device(self, device):
-        """ populate the gui using data from the provided  device object
+        """ populate the gui using data from the provided device object
+            values of None will be left unchanged (set by constructor / qsettings)
         """
         self.name.setText(device.name)
         if self.host is not None:
@@ -282,7 +282,11 @@ class PeelDeviceBase(QtCore.QObject):
         return self.name
 
     def set_enabled(self, value):
-        """ Main app calls this to enable / disable the device.  Default behavior is to set self.enabled """
+        """ Main app calls this to enable / disable the device.  Default behavior is to set self.enabled
+        The implementation of this is somewhat device specific.  The minimum expected behavior will be
+        the devices not longer responds to commands and reports status - it will appear greyed out in the
+        ui.
+        """
         self.enabled = value
 
     @staticmethod
@@ -300,6 +304,7 @@ class PeelDeviceBase(QtCore.QObject):
             need to be overridden if a different dialog is being used.
             The kwargs need to match the parameters specified in SimpleDeviceWidget
             constructor, ie if has_host is True, kwargs will have a "host" parameter.
+            :return: True if values are valid, False will keep the add dialog open to fix issues
         """
         raise NotImplementedError
 
@@ -307,7 +312,9 @@ class PeelDeviceBase(QtCore.QObject):
         """ Initiates the connection to the device.  Called by the application.
             If the device is already connected this function should disconnect it then
             reconnect again.
+            :return: None
         """
+        raise NotImplementedError
         
     def teardown(self):
         """ Called when the app is shutting down - tell all threads to stop and return """
@@ -411,7 +418,7 @@ class PeelDeviceBase(QtCore.QObject):
             trigger a state request and cause a loop.
 
             Valid values for reason:
-                DEVICE - the device has initiaited the update
+                DEVICE - the device has initiated the update
 
 
         """
@@ -540,7 +547,9 @@ class DeviceCollection(QtCore.QObject):
         data = []
         for d in self.devices:
             try:
-                data.append((d.device(), d.as_dict()))
+                device_data = d.as_dict()
+                device_data["device_enabled"] = d.enabled
+                data.append((d.device(), device_data))
             except NotImplementedError as e:
                 print("Incomplete device (as_dict): " + d.name)
 
@@ -605,7 +614,9 @@ class DeviceCollection(QtCore.QObject):
 
                 try:
                     device = klass[class_name](name=device_data['name'])
+                    device.enabled = device_data.get('device_enabled', True)
                     self.add_device(device)  # Adds to self.device only
+                    cmd.setDeviceEnabled(device.plugin_id, device.enabled)
                     device.reconfigure(**device_data)
                     device.connect_device()
 
