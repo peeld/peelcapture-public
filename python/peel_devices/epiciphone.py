@@ -453,16 +453,11 @@ class EpicIPhone(PeelDeviceBase):
 class IPhoneDownloadThread(DownloadThread):
 
     def __init__(self, phone, directory, listen_port=8444, takes=None):
-        super(IPhoneDownloadThread, self).__init__()
+        super(IPhoneDownloadThread, self).__init__(True)
         self.takes = takes
         self.phone = phone
         self.listen_port = listen_port
         self.directory = directory
-        self.file_progress = 0.0
-
-        self.files = []
-        self.file_i = None
-        self.tick_mod = 0
 
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.settimeout(5)
@@ -477,7 +472,7 @@ class IPhoneDownloadThread(DownloadThread):
             self.socket.close()
         super(IPhoneDownloadThread, self).teardown()
 
-    def run(self):
+    def process(self):
 
         self.log("Downloading %d iphone files" % len(self.files))
 
@@ -492,42 +487,36 @@ class IPhoneDownloadThread(DownloadThread):
         self.set_started()
 
         my_address = self.phone.listen_ip + ":" + str(self.listen_port)
-        self.file_i = 0
 
         self.socket.listen()
 
         try:
 
-            while self.is_running():
+            for i, this_file in enumerate(self.files):
 
-                # For each file - loop much increment file_i or break
-
-                if self.file_i >= len(self.files):
-                    self.log("No more files")
+                if not self.is_running():
                     break
 
-                this_file = self.files[self.file_i]
+                self.set_current(i)
 
-                this_name = str(self.phone) + ":" + this_file.local_file
+                this_name = str(self.phone.name) + ":" + this_file.local_file
 
                 # Skip existing
                 full_path = os.path.join(self.directory, this_file.local_file)
                 if os.path.isfile(full_path):
-                    self.file_i += 1
-                    self.tick.emit(0.0)
                     self.file_done.emit(this_name, self.COPY_SKIP, None)
                     continue
 
                 # Tell the iphone we want it to send us a file
                 self.phone.client.send_message("/Transport", (my_address, this_file.remote_file))
 
-                self.file_progress = 0
+                self.current_size = 0
 
                 try:
                     # Wait for the connection from the phone sending the file
                     conn, addr = self.socket.accept()
                 except socket.timeout:
-                    self.set_current("No response for file: " + this_file.remote_file)
+                    self.log("No response for file: " + this_file.remote_file)
                     print("No response for: " + this_file.remote_file)
                     self.file_done.emit(this_name, DownloadThread.COPY_FAIL, "Timeout")
                     conn = None
@@ -549,24 +538,20 @@ class IPhoneDownloadThread(DownloadThread):
                     if not this_file.complete:
                         os.unlink(full_path)
 
-                self.file_i += 1
-                self.file_progress = 1.0
-                self.tick.emit(0.0)
+            else:
+                self.set_current(len(self.files))
 
-            self.log("Thread done")
 
         except Exception as e:
             self.log(str(e))
         finally:
             self.socket.close()
 
-        self.all_done.emit()
+        self.set_finished()
 
     def read(self, conn, this_file, fp):
 
         # IOS device has connected, get the file
-
-        self.set_current(this_file.local_file)
 
         this_file.complete = self.COPY_FAIL
 
@@ -577,35 +562,27 @@ class IPhoneDownloadThread(DownloadThread):
 
         this_file.file_size = struct.unpack(">i", size_header)[0]
         this_file.data_size = 0
+        self.file_size = this_file.file_size
 
         if this_file.file_size == 0:
             this_file.error = "Zero sized file"
             return
 
         while self.is_running():
-            data = conn.recv(1024 * 10)
+            data = conn.recv(65536)
             if data is None or len(data) == 0:
                 break
 
             fp.write(data)
             this_file.data_size += len(data)
-
-            if self.tick_mod > 30:
-                value = float(this_file.data_size)
-                total = float(this_file.file_size)
-                file_progress = value / total
-
-                major = float(self.file_i) / float(len(self.files))
-                minor = (1.0 / float(len(self.files))) * file_progress
-
-                self.tick.emit(major + minor)
-                self.tick_mod = 0
-            else:
-                self.tick_mod += 1
+            self.current_size = this_file.data_size
 
         if this_file.data_size != this_file.file_size:
             this_file.error = "Incomplete data"
         else:
             this_file.complete = self.COPY_OK
+
+
+
 
 

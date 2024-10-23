@@ -1,10 +1,10 @@
 import peel_devices
 import socket
-import threading
 import xml.etree.ElementTree as et
 from PySide6 import QtWidgets, QtCore
 import select
 from PeelApp import cmd
+import os.path
 
 class XmlUdpListenThread(QtCore.QThread):
 
@@ -63,14 +63,16 @@ class XmlUdpListenThread(QtCore.QThread):
                 elif tree.tag == "CaptureStop":
                     self.status = "ONLINE"
 
-                elif tree.tag == 'CaptureStopAck':
+                elif tree.tag == 'StopRecordingAck':
+                    # xsens
                     self.status = "ONLINE"
 
                 elif tree.tag == 'CaptureComplete':
                     self.status = "ONLINE"
 
-                elif tree.tag == 'CaptureStartAck' and 'Result' in tree.attrib \
+                elif tree.tag == 'StartRecordingAck' and 'Result' in tree.attrib \
                         and 'Result' in tree.attrib:
+                    # xsens error
                     if tree.attrib['Result'] == "TRUE":
                         self.status = "RECORDING"
                     else:
@@ -105,7 +107,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         Sends the packet to a specific host and port.  Use host 255.255.255.255 for broadcast
     """
 
-    def __init__(self, name):
+    def __init__(self, name, data_format=None, listen_port=1234):
 
         super(XmlUdpDeviceBase, self).__init__(name)
 
@@ -113,8 +115,8 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         self.port = 1234
         self.broadcast = None
         self.listen_ip = None
-        self.listen_port = 1234
-        self.format = None
+        self.listen_port = listen_port
+        self.format = data_format
         self.packet_id = 0
         self.udp = None
         self.listen_thread = None
@@ -123,6 +125,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         self.current_take = None
         self.set_capture_folder = False
         self.enter_clip_editing = False  # For Rokoko
+        self.description = ""
 
     def as_dict(self):
         return {'name': self.name,
@@ -226,6 +229,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             print("Done")
 
     def command(self, command, arg):
+        print(command, arg)
         if command == "record":
             self.capture_start(arg)
             self.recording = True
@@ -238,7 +242,15 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             self.update_state()
             return
 
-        if command in ["play", "takeNumber", "takeName", "shotName", "shotTag", "description", "takeId"]:
+        if command == "description":
+            self.description = arg
+
+        if command == "set_data_directory" and self.set_capture_folder:
+            if not os.path.isdir(self.data_directory()):
+                print(f"Creating directory: {self.data_directory()}")
+                os.mkdir(self.data_directory())
+
+        if command in ["play", "takeNumber", "takeName", "shotName", "shotTag", "takeId", "set_data_directory"]:
             return None
 
         print(f"{self.name} ignored the command: {command} {arg}")
@@ -273,9 +285,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         elif self.format == "XSENS":
             # https://base.xsens.com/s/article/UDP-Remote-Control?language=en_US
             msg = '<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n'
-            msg += '<CaptureStop>\n'
-            msg += '<Notes></Notes>\n'
-            msg += '</CaptureStop>\n'
+            msg += '<StopRecordingReq />\n'
 
         elif self.format == "Rokoko":
             # https://github.com/Rokoko/studio-command-api-examples/blob/master/README.md#trigger-messages
@@ -312,6 +322,8 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
 
         self.current_take = take
 
+        print(f"START {self.format}")
+
         if self.format == "Blade":
             msg = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>' + \
                   '<CaptureStart><Name VALUE="%s"/>' % self.current_take + \
@@ -343,13 +355,14 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         elif self.format == 'XSENS':
             # https://base.xsens.com/s/article/UDP-Remote-Control?language=en_US
             msg = '<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n'
-            msg += '<CaptureStart>\n'
-            msg += f'<Name VALUE="{self.current_take}" />\n'
+            msg += '<StartRecordingReq'
             if self.set_capture_folder:
-                msg += '<DatabasePath VALUE="' + self.data_directory() + '" />\n'
-            msg += '<TimeCode VALUE="" />\n'
-            msg += '<Notes></Notes>\n'
-            msg += '</CaptureStart>\n'
+                take_path = os.path.join(self.data_directory(), self.current_take)
+            else:
+                take_path = self.current_take
+            msg += f' SessionName="{take_path}"'
+            msg += f' Description="{self.description}"'
+            msg += ' />\n'
 
         elif self.format == "Rokoko":
             # https://github.com/Rokoko/studio-command-api-examples/blob/master/README.md#trigger-messages

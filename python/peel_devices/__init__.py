@@ -28,6 +28,8 @@ import pkgutil, inspect
 import importlib
 import os
 import logging, sys
+import time
+
 logger = logging.getLogger()
 logger.addHandler(logging.StreamHandler(sys.stdout))
 
@@ -632,9 +634,6 @@ class DeviceCollection(QtCore.QObject):
             QtWidgets.QMessageBox.warning(cmd.getMainWindow(), "Error", msg)
 
 
-
-
-
 class FileItem(object):
     def __init__(self, remote_file, local_file):
         self.remote_file = remote_file
@@ -644,10 +643,12 @@ class FileItem(object):
         self.error = None
         self.complete = False
 
+    def __str__(self):
+        return str(self.local_file)
 
-class DownloadThread(QtCore.QThread):
 
-    tick = QtCore.Signal(float)  # 0.0 - 1.0 progress done
+class DownloadThread(QtCore.QObject):
+
     file_done = QtCore.Signal(str, int, str)  # Name, CopyState, error string
     all_done = QtCore.Signal()
     message = QtCore.Signal(str)
@@ -661,13 +662,58 @@ class DownloadThread(QtCore.QThread):
     STATUS_STOP = 2
     STATUS_FINISHED = 3
 
-    def __init__(self):
+    def __init__(self, all_files):
         super(DownloadThread, self).__init__()
         self.status = self.STATUS_NONE
-        self.current_file = None
+        self.current_index = None
+        self.files = []
+        self.all_files = all_files
+        self.last_bytes = None
+        self.last_time = None
+        self.bandwidth = None
+        self.bytes = 0
+        self.file_size = 0
+        self.current_size = 0
+        self.device_id = None
 
-    def __del__(self):
-        self.terminate()
+    def add_bytes(self, value):
+        self.bytes += value
+        self.calc_bandwidth(self.bytes)
+
+    def calc_bandwidth(self, new_bytes):
+        t = time.time()
+        if self.last_time is None:
+            self.last_time = t
+            self.last_bytes = new_bytes
+            self.bandwidth = 0
+            return
+
+        tdiff = t - self.last_time
+        if tdiff < 1.0:
+            return
+
+        self.bandwidth = (new_bytes - self.last_bytes) / tdiff
+        print(self.bandwidth)
+
+    def progress(self):
+
+        if self.current_index is None:
+            return 0
+        if not self.files:
+            print(str(self) + " no files")
+            return 1
+
+        p = self.current_index / len(self.files)
+
+        if self.file_size == 0:
+            return p
+
+        fraction = 1 / len(self.files)
+        # print(p, fraction, self.current_size, self.file_size)
+        return p + fraction * (self.current_size / self.file_size)
+
+    def process(self):
+        return NotImplementedError
 
     def log(self, message):
         self.message.emit(message)
@@ -675,19 +721,27 @@ class DownloadThread(QtCore.QThread):
     def teardown(self):
         cmd.writeLog(f"Teardown {str(self)}\n")
         self.status = self.STATUS_STOP
-        self.wait(1000)
 
     def set_finished(self):
+        self.file_size = 0
+        self.current_size = 0
         self.status = self.STATUS_FINISHED
-        self.tick.emit(0.0)
         self.all_done.emit()
 
     def set_started(self):
         self.status = self.STATUS_RUNNING
-        self.tick.emit(0.0)
 
-    def set_current(self, value):
-        self.current_file = value
+    def current_file(self):
+        if self.current_index is None:
+            return None
+
+        if self.current_index == len(self.files):
+            return None
+
+        return self.files[self.current_index]
+
+    def set_current(self, index):
+        self.current_index = index
 
     def file_ok(self, name):
         self.file_done.emit(name, self.COPY_OK, None)

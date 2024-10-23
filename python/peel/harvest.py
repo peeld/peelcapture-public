@@ -35,13 +35,16 @@ class HarvestDialog(QtWidgets.QDialog):
 
         # from peel.DEVICES - list of peel_device.PeelDevice objects
         self.devices = devices
-        self.current_device = -1
-        self.current_process = None
-        self.total_copied = None
-        self.total_failed = None
-        self.total_skipped = None
+        self.total_copied = 0
+        self.total_failed = 0
+        self.total_skipped = 0
         self.running = None
-        self.work_threads = []
+        self.workers = []
+        self.threads = []
+        self.update_timer = QtCore.QTimer()
+        self.update_timer.setSingleShot(False)
+        self.update_timer.setInterval(500)
+        self.update_timer.timeout.connect(self.do_update)
 
         self.setWindowTitle("Harvest")
 
@@ -70,14 +73,24 @@ class HarvestDialog(QtWidgets.QDialog):
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
 
         # Device List
-        self.device_list = QtWidgets.QListWidget()
-        self.device_list.setStyleSheet("background: #a6a6a6; color: black; border-radius: 3px;")
-        for i in self.devices:
-            item = QtWidgets.QListWidgetItem(i.name)
-            item.setCheckState(QtCore.Qt.Checked)
-            self.device_list.addItem(item)
-
-        self.selected_devices = None
+        self.device_list = QtWidgets.QTreeWidget()
+        self.device_list.setHeaderHidden(True)
+        self.device_list.setIndentation(0)
+        self.device_list.setStyleSheet("background: #111; color: #fff; border-radius: 3px;")
+        self.device_list.setColumnCount(3)
+        self.device_list.setColumnWidth(0, 200)
+        self.device_list.setColumnWidth(1, 100)
+        self.device_list.setColumnWidth(2, 200)
+        for device in self.devices:
+            pb = QtWidgets.QProgressBar()
+            pb.setStyleSheet("text-align: center; margin-top: 2px; margin-bottom: 2px; height: 22px")
+            item = QtWidgets.QTreeWidgetItem([device.name, None, "--"])
+            brush = QtGui.QBrush(QtGui.QColor(30, 30, 30))
+            for i in range(3):
+                item.setBackground(i, brush)
+            item.setCheckState(0, QtCore.Qt.Checked)
+            self.device_list.addTopLevelItem(item)
+            self.device_list.setItemWidget(item, 1, pb)
 
         self.splitter.addWidget(self.device_list)
         self.splitter.setSizes([1, 3])
@@ -104,17 +117,18 @@ class HarvestDialog(QtWidgets.QDialog):
         self.go_button.released.connect(self.go)
         self.browse_button = QtWidgets.QPushButton("Browse Files")
         self.browse_button.released.connect(self.browse_files)
-        self.close_button = QtWidgets.QPushButton("Close")
-        self.close_button.released.connect(self.teardown)
+        self.stop_button = QtWidgets.QPushButton("Stop")
+        self.stop_button.released.connect(self.teardown)
 
         self.all_files = QtWidgets.QCheckBox("All Files")
+        self.all_files.setChecked(settings.value("harvestAlLFiles") == "True")
 
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addWidget(self.go_button)
         button_layout.addSpacing(3)
         button_layout.addWidget(self.browse_button)
         button_layout.addSpacing(3)
-        button_layout.addWidget(self.close_button)
+        button_layout.addWidget(self.stop_button)
         button_layout.addStretch(1)
         button_layout.addWidget(self.all_files)
         button_layout.addSpacing(3)
@@ -136,47 +150,74 @@ class HarvestDialog(QtWidgets.QDialog):
     def teardown(self):
         self.running = False
         cmd.writeLog("Harvest teardown\n")
-        if self.current_process is not None:
-            self.current_process.teardown()
-        self.close()
+        for worker in self.workers:
+            worker.teardown()
+        for thread in self.threads:
+            thread.exit(0)
+        for thread in self.threads:
+            thread.wait()
 
     def __del__(self):
         cmd.writeLog("harvest closing\n")
         self.settings.setValue("harvestGeometry", self.saveGeometry())
         self.settings.setValue("harvestSplitterGeometry", self.splitter.sizes())
+        self.settings.setValue("harvestAllFiles", str(self.all_files.isChecked()))
         self.teardown()
 
     def go(self):
 
         # Go button has been pressed, lets get started...
 
-        if self.go_button.text() == "Cancel":
+        if self.running is True:
             self.running = False
-            if self.current_process is not None:
-                self.current_process.teardown()
+            self.teardown()
             self.go_button.setText("Get Files")
             return
 
-        self.selected_devices = []
-        for i in range(self.device_list.count()):
-            item = self.device_list.item(i)
-            if item.checkState() == QtCore.Qt.Checked:
-                self.selected_devices.append(i)
+        self.workers = []
+        self.threads = []
 
-        if len(self.selected_devices) == 0:
+        for i in range(self.device_list.topLevelItemCount()):
+            item = self.device_list.topLevelItem(i)
+            if item.checkState(0) == QtCore.Qt.Checked:
+                # adds to self.workers and self.threads
+                self.make_worker(i)
+
+        if len(self.workers) == 0:
             self.log_message("No devices to collect files")
             return
-
-        print("Queue: " + str(self.selected_devices))
 
         self.running = True
         self.total_copied = 0
         self.total_failed = 0
         self.total_skipped = 0
-        self.current_device = -1
 
-        # Start the copy loop
-        self.next_device()
+        self.progress_bar.setValue(0)
+        self.progress_bar.setRange(0, 100)
+        self.info_label.setText("")
+
+        self.update_timer.start()
+
+        self.update_gui()
+
+    def make_worker(self, device_id):
+        device = self.devices[device_id]
+        device_path = os.path.join(self.path.text(), device.name)
+
+        # Worker
+        worker = device.harvest(device_path, self.all_files.isChecked())
+        worker.device_id = device_id
+        worker.file_done.connect(self.file_done, QtCore.Qt.QueuedConnection)
+        worker.all_done.connect(self.all_done, QtCore.Qt.QueuedConnection)
+        worker.message.connect(self.log_message, QtCore.Qt.QueuedConnection)
+        self.workers.append(worker)
+
+        # Thread
+        thread = QtCore.QThread()
+        self.threads.append(thread)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.process)
+        thread.start()
 
     def update_gui(self):
         if self.running:
@@ -190,78 +231,61 @@ class HarvestDialog(QtWidgets.QDialog):
             self.path_button.setEnabled(True)
             self.go_button.setText("Get Files")
 
-    def log_message(self, message):
-        self.log.appendPlainText(message)
-        cmd.writeLog(message + "\n")
-
-    def is_done(self):
-        return self.current_device >= len(self.selected_devices)
-
-    def next_device(self):
-
-        """ Called when we first start of when a device has finished processing """
-
-        # current device is an index in self.selected_devices
-        # self.selected devices is a list of indexes in self.device_list / self.devices
-
-        if self.current_process is not None:
-            print("Finished: " + str(self.current_process))
-
-        print("Next device")
-
-        self.current_device += 1
-
-        self.update_gui()
-
-        if not self.running:
-            print("Not running")
-            return
-
+    def do_update(self):
         if self.is_done():
-            # Finished
-
-            self.progress_bar.setValue(100)
-            self.progress_bar.setRange(0, 100)
-            self.info_label.setText("")
-
-            msg = "Download Complete\n\nFiles copied: %d\nFiles skipped: %d\nFiles failed: %d" % (self.total_copied, self.total_skipped, self.total_failed)
+            self.update_timer.stop()
+            msg = "Download Complete\n\nFiles copied: %d\nFiles skipped: %d\nFiles failed: %d" % \
+                  (self.total_copied, self.total_skipped, self.total_failed)
             self.log.appendPlainText(msg)
             self.running = False
             self.update_gui()
 
-            QtWidgets.QMessageBox.information(self, "Done", msg)
+        total = 0
 
-            return
+        for worker in self.workers:
 
-        # Un-highlight all the devices
-        for i in range(self.device_list.count()):
-            item = self.device_list.item(i)
-            item.setBackground(QtGui.QBrush())
+            row = worker.device_id
+            item = self.device_list.topLevelItem(row)
 
-        device_id = self.selected_devices[self.current_device]
-        device = self.devices[device_id]
+            val = worker.progress() * 100
+            item.setText(1, f"{val:.2%}")
+            file = worker.current_file()
+            item.setText(2, "" if file is None else str(file))
 
-        print("Starting: %d" % self.current_device)
-        print("Device:   %d" % device_id)
+            brush = QtGui.QBrush()
+            fg = QtGui.QColor(255, 255, 255)
+            if worker.status == DownloadThread.STATUS_RUNNING:
+                brush = QtGui.QBrush(QtGui.QColor(66, 210, 66))
+                fg = QtGui.QColor(0, 0, 0)
+            elif worker.status == DownloadThread.STATUS_FINISHED:
+                brush = QtGui.QBrush(QtGui.QColor(128, 128, 128))
 
-        self.current_process = device.harvest(os.path.join(self.path.text(), device.name), self.all_files.isChecked())
-        self.current_process.tick.connect(self.progress, QtCore.Qt.QueuedConnection)
-        self.current_process.file_done.connect(self.file_done, QtCore.Qt.QueuedConnection)
-        self.current_process.all_done.connect(self.next_device, QtCore.Qt.QueuedConnection)
-        self.current_process.message.connect(self.log_message, QtCore.Qt.QueuedConnection)
-        self.current_process.finished.connect(self.device_cleanup)
-        self.work_threads.append(self.current_process)
-        print(f"Starting download thread for {str(device)}")
-        self.current_process.start()
+            pb = self.device_list.itemWidget(item, 1)
+            if pb:
+                pb.setValue(val)
+                pb.setMaximum(100)
 
-        # Highlight the device we are about to start on
-        item = self.device_list.item(device_id)
-        item.setBackground(QtGui.QBrush(QtGui.QColor(167, 195, 244)))
+            total += val
 
-    def device_cleanup(self):
-        device_thread = self.sender()
-        print("Thread done: " + str(device_thread))
-        self.work_threads.remove(device_thread)
+            for i in range(3):
+                item.setBackground(i, brush)
+                item.setForeground(i, fg)
+
+        self.progress_bar.setValue(total // len(self.workers))
+
+    def log_message(self, message):
+        self.log.appendPlainText(message)
+        cmd.writeLog(message + "\n")
+
+    def count(self, state):
+        return sum(1 for worker in self.workers if worker.status == state)
+
+    def is_done(self):
+        for worker in self.workers:
+            if worker.is_running():
+                return False
+
+        return True
 
     def file_done(self, name, copy_state, error):
         if copy_state == DownloadThread.COPY_OK:
@@ -274,21 +298,17 @@ class HarvestDialog(QtWidgets.QDialog):
             self.log.appendHtml("<FONT COLOR=\"#933\">FAILED: " + name + ":" + str(error) + "</FONT>")
             self.total_failed += 1
 
-    def progress(self, minor):
-        if self.current_device is None or self.is_done():
-            print("Process Done")
-            return
+    def all_done(self):
+        device = self.sender()
+        index = self.workers.index(device)
+        self.threads[index].exit()
 
-        if len(self.devices) == 0:
-            return
-
-        minor = float(minor) / float(len(self.devices))
-        major = float(self.current_device) / float(len(self.selected_devices))
-        self.progress_bar.setValue(int((major + minor) * 100.0))
-        self.progress_bar.setRange(0, 100)
-        device_name = self.devices[self.current_device].name
-        if self.current_process.current_file is not None:
-            self.info_label.setText(str(device_name) + ": " + str(self.current_process.current_file))
+    def sender_device_id(self):
+        ref = self.sender()
+        for i, worker in enumerate(self.workers):
+            if ref == worker:
+                return i
+        return None
 
     def browse(self):
         d = cmd.currentConfig["DataDirectory"]
@@ -299,7 +319,6 @@ class HarvestDialog(QtWidgets.QDialog):
     def browse_files(self):
         path = self.path.text()
         url = QtCore.QUrl.fromLocalFile(path)
-        print(url)
         QtGui.QDesktopServices.openUrl(url)
 
 

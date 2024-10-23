@@ -365,8 +365,8 @@ def show_harvest():
         QtWidgets.QMessageBox.warning(cmd.getMainWindow(), "Harvest", "No supported devices available")
         return
     h = harvest.HarvestDialog(SETTINGS, harvest_devices, cmd.getMainWindow())
-    h.exec_()
-    h.deleteLater()
+    h.show()
+    # h.deleteLater()
 
 
 def copy_selects():

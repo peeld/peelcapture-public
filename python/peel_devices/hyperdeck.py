@@ -177,7 +177,8 @@ import os.path
 from ftplib import FTP
 import ftplib
 import re
-
+import time
+import random
 
 class AddHyperDeckWidget(SimpleDeviceWidget):
     def __init__(self, settings):
@@ -192,12 +193,11 @@ class AddHyperDeckWidget(SimpleDeviceWidget):
 class HyperDeckDownloadThread(DownloadThread):
 
     def __init__(self, deck, directory, all_files):
-        super(HyperDeckDownloadThread, self).__init__()
+        super(HyperDeckDownloadThread, self).__init__(all_files)
         self.directory = directory
         self.deck = deck
-        self.files = []
         self.slots = []
-        self.all_files = all_files
+        self.fp = None
 
     def __str__(self):
         return str(self.deck) + " Downloader"
@@ -216,11 +216,11 @@ class HyperDeckDownloadThread(DownloadThread):
 
         self.files.append(ret.group(1))
 
-    def run(self):
-
-        takes = cmd.takes()
+    def process(self):
 
         self.set_started()
+
+        takes = cmd.takes()
 
         if not os.path.isdir(self.directory):
             os.mkdir(self.directory)
@@ -250,21 +250,24 @@ class HyperDeckDownloadThread(DownloadThread):
                         if not self.is_running():
                             break
 
+                        self.set_current(i)
+
                         file_name = os.path.splitext(file)[0].lower()
 
                         if not self.all_files:
 
+                            file_name_fixed = file_name.replace('-', '_').replace(' ', '_').lower()
+
                             found = False
                             for take in takes:
-                                cmd.writeLog(f"{take}  {file_name}")
-                                if file_name.lower().startswith(take.lower()):
+                                take_fixed = take.replace('-', '_').replace(' ', '_').lower()
+
+                                if file_name_fixed.startswith(take_fixed):
                                     found = True
                                     break
                             if not found:
                                 cmd.writeLog("Skipping non take: " + str(file_name))
                                 continue
-
-                        self.set_current(file)
 
                         this_file = str(self.deck) + ":" + file
 
@@ -277,19 +280,30 @@ class HyperDeckDownloadThread(DownloadThread):
                             # download
                             cmd.writeLog("Hyperdeck downloading: " + str(file))
                             try:
-                                with open(local_file, 'wb') as fp:
-                                    ftp.retrbinary('RETR ' + file, fp.write)
-                                self.file_ok(this_file)
+                                self.file_size = ftp.size(file)
+                                self.fp = open(local_file, 'wb')
+                                if not self.fp:
+                                    self.file_fail(this_file, str(e))
+                                else:
+                                    ftp.retrbinary('RETR ' + file, self.write)
+                                    self.file_ok(this_file)
                             except IOError as e:
                                 self.file_fail(this_file, str(e))
                             except ftplib.all_errors as e:
                                 self.file_fail(this_file, str(e))
 
-                        self.tick.emit(float(i) / float(len(self.files)))
+                    else:
+                        self.set_current(len(self.files))
+
         except IOError as e:
             self.message.emit("HyperDeck FTP Error:" + str(e))
 
         self.set_finished()
+
+    def write(self, data):
+        self.fp.write(data)
+        self.current_size += len(data)
+
 
 
 class HyperDeck(TcpDevice):

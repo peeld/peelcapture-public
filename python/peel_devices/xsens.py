@@ -41,9 +41,8 @@ class XSensWidget(SimpleDeviceWidget):
 class XSens(XmlUdpDeviceBase):
 
     def __init__(self, name="XSens"):
-        super().__init__(name)
-        self.port = 6004
-        self.fmt = "XSENS"
+        super().__init__(name, "XSENS", 6004)
+        print("LOADED XSENS")
 
     def as_dict(self):
         return {'name': self.name,
@@ -51,7 +50,9 @@ class XSens(XmlUdpDeviceBase):
                 'port': self.port,
                 'broadcast': self.broadcast,
                 'listen_ip': self.listen_ip,
-                'listen_port': self.listen_port}
+                'listen_port': self.listen_port,
+                'set_capture_folder': self.set_capture_folder,
+                'fmt': "XSENS"}
 
     @staticmethod
     def device():
