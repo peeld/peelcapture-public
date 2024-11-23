@@ -3,7 +3,7 @@ import os
 import json
 import shutil
 from PeelApp import cmd
-
+from peel import file_util
 
 class SelectSort(QtWidgets.QDialog):
     def __init__(self, settings, parent):
@@ -43,7 +43,7 @@ class SelectSort(QtWidgets.QDialog):
         select_layout = QtWidgets.QHBoxLayout()
         select_label = QtWidgets.QLabel("Selects: ")
         self.select_input = QtWidgets.QLineEdit()
-        self.select_input.setText(settings.value("select_sort_selects", "A, B"))
+        self.select_input.setText(settings.value("select-sort-selects", "A, B"))
         select_layout.addWidget(select_label)
         select_layout.addWidget(self.select_input)
         layout.addItem(select_layout)
@@ -91,6 +91,7 @@ class SelectSort(QtWidgets.QDialog):
         for take in self.data["takes"]:
             select = take["select"]
             take_name = take["takeName"]
+            print(f"{take_name} {select}")
             self.takeList[take_name] = select
         return True
 
@@ -107,12 +108,13 @@ class SelectSort(QtWidgets.QDialog):
         for device in devices:
             device_dir = os.path.join(self.data_dir, device)
             for file in os.listdir(device_dir):
-                file_name = os.path.splitext(file)[0]
-                if file_name not in self.takeList:
+                take_name = file_util.find_take(file, self.takeList)
+                if not take_name:
                     continue
-                select = self.takeList[file_name]
-                if (select not in self.selectList) or (select == ""):
+                select = self.takeList[take_name]
+                if select not in self.selectList or select == "":
                     continue
+
                 path = self.create_dir(self.dest_dir.text(), select)
                 self.copy_over(select, device, file, os.path.join(device_dir, file), path)
 

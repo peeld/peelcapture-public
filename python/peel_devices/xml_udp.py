@@ -6,6 +6,7 @@ import select
 from PeelApp import cmd
 import os.path
 
+
 class XmlUdpListenThread(QtCore.QThread):
 
     state_change = QtCore.Signal()
@@ -107,12 +108,12 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         Sends the packet to a specific host and port.  Use host 255.255.255.255 for broadcast
     """
 
-    def __init__(self, name, data_format=None, listen_port=1234):
+    def __init__(self, name, data_format=None, listen_port=1234, port=4000, enable_listen=True):
 
         super(XmlUdpDeviceBase, self).__init__(name)
 
         self.host = "192.168.1.100"
-        self.port = 1234
+        self.port = port
         self.broadcast = None
         self.listen_ip = None
         self.listen_port = listen_port
@@ -126,6 +127,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         self.set_capture_folder = False
         self.enter_clip_editing = False  # For Rokoko
         self.description = ""
+        self.enable_listen = enable_listen
 
     def as_dict(self):
         return {'name': self.name,
@@ -135,12 +137,13 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
                 'listen_ip': self.listen_ip,
                 'listen_port': self.listen_port,
                 'fmt': self.format,
-                'set_capture_folder': self.set_capture_folder}
+                'set_capture_folder': self.set_capture_folder,
+                'enable_listen': self.enable_listen }
 
     def reconfigure(self, name, **kwargs):
 
-        #print("XMLUDP Reconfigure")
-        #print(str((kwargs)))
+        print("XMLUDP Reconfigure")
+        print(str(kwargs))
 
         self.name = name
 
@@ -154,7 +157,11 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         self.broadcast = kwargs.get('broadcast')
         self.listen_ip = kwargs.get('listen_ip')
         self.listen_port = kwargs.get('listen_port')
-        self.format = kwargs.get('fmt')
+        self.enable_listen = kwargs.get('enable_listen', True)
+
+        # The format may be set by the constructor when subclassed
+        if 'fmt' in kwargs:
+            self.format = kwargs['fmt']
         self.set_capture_folder = kwargs.get('set_capture_folder')
 
         return True
@@ -167,7 +174,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             del self.listen_thread
             self.listen_thread = None
 
-        if self.listen_ip is not None and self.listen_port is not None:
+        if self.enable_listen and self.listen_ip is not None and self.listen_port is not None:
             self.listen_thread = XmlUdpListenThread(self.listen_ip, self.listen_port)
             self.listen_thread.state_change.connect(self.do_state)
             self.listen_thread.start()
@@ -195,7 +202,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         if self.error is not None:
             return "ERROR"
 
-        if self.listen_thread is not None:
+        if self.enable_listen and self.listen_thread is not None:
             return self.listen_thread.status
 
         else:
@@ -221,12 +228,9 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             self.udp = None
 
         if self.listen_thread is not None and not self.listen_thread.isFinished():
-            print("Stopping")
             self.listen_thread.running = False
             self.listen_thread.listen.close()
-            print("Waiting");
             self.listen_thread.wait()
-            print("Done")
 
     def command(self, command, arg):
         print(command, arg)
@@ -357,7 +361,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             msg = '<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n'
             msg += '<StartRecordingReq'
             if self.set_capture_folder:
-                take_path = os.path.join(self.data_directory(), self.current_take)
+                take_path = self.data_directory() + "/" + self.current_take
             else:
                 take_path = self.current_take
             msg += f' SessionName="{take_path}"'
@@ -391,7 +395,6 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
                 + '\t<PacketID VALUE="%d"/>\n' % self.packet_id \
                 + '</CaptureStart>\n'
 
-        print(msg)
         self.send(msg)
 
     def send(self, msg):
@@ -399,8 +402,8 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             self.error = "No socket"
             print("No socket while trying to send error - " + self.name)
 
-        print(f"UDP {self.host}  {self.port}  {self.format}")
-        print(msg)
+        # print(f"UDP {self.host}  {self.port}  {self.format}")
+        # print(msg)
 
         try:
             self.udp.sendto(msg.encode("utf8"), (self.host, self.port))
@@ -432,6 +435,10 @@ class AddXmlUdpWidget(peel_devices.SimpleDeviceWidget):
                                               has_broadcast=True, has_listen_ip=True, has_listen_port=True,
                                               has_set_capture_folder=True)
 
+        self.enable_listen = QtWidgets.QCheckBox()
+        self.enable_listen.setChecked(settings.value(self.title + "EnableListen") == "True")
+        self.form_layout.addRow("Listen", self.enable_listen)
+
         self.format_mode = QtWidgets.QComboBox()
         self.format_mode.addItems(["Vicon", "Optitrack", "XSENS", "Blade", "Rokoko", "Nansense", "HOLOSYS"])
         self.format_mode.setCurrentText(settings.value(self.title + "Format", "Vicon"))
@@ -440,11 +447,13 @@ class AddXmlUdpWidget(peel_devices.SimpleDeviceWidget):
     def populate_from_device(self, device):
         super(AddXmlUdpWidget, self).populate_from_device(device)
         self.format_mode.setCurrentText(device.format)
+        self.enable_listen.setChecked(device.enable_listen is True)
 
     def update_device(self, device, data=None):
         if data is None:
             data = {}
         data['fmt'] = self.format_mode.currentText()
+        data['enable_listen'] = self.enable_listen.isChecked()
         return super(AddXmlUdpWidget, self).update_device(device, data)
 
     def do_add(self):
@@ -452,6 +461,7 @@ class AddXmlUdpWidget(peel_devices.SimpleDeviceWidget):
             return False
 
         self.settings.setValue(self.title + "Format", self.format_mode.currentText())
+        self.settings.setValue(self.title + "EnableListen", str(self.enable_listen.isChecked()))
         return True
 
 

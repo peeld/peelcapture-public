@@ -47,6 +47,6 @@ class InterfaceCombo(QtWidgets.QComboBox):
     def ip(self):
 
         if self.currentText() == "--all--":
-            return ""
+            return "0.0.0.0"
         else:
             return self.currentText()

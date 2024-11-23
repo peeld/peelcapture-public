@@ -125,8 +125,6 @@ class MotiveDialog(BaseDeviceWidget):
 
         return device.reconfigure(name, **data)
 
-
-
     def do_add(self):
 
         if not super().do_add():

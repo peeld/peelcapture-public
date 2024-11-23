@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 
 from PeelApp import cmd
+import os.path
 
 INSTANCE = None
 
@@ -12,9 +13,20 @@ def getInstance():
     return INSTANCE
 
 
-def show(value):
+def show(value, screenName):
+    instance = getInstance()
     if value:
-        getInstance().show()
+        instance.show()
+
+        print(screenName)
+
+        if screenName != "None":
+            for eachScreen in QtGui.QGuiApplication.screens():
+                if screenName.lstrip(r"\.") == eachScreen.name().lstrip(r"\."):
+                    rect = eachScreen.geometry()
+                    instance.move(rect.topLeft())
+                    instance.showFullScreen()
+
     else:
         getInstance().hide()
 
@@ -104,6 +116,26 @@ class SlateWidget(QtWidgets.QWidget):
         painter.drawText(rect, QtCore.Qt.AlignHCenter, self.text)
 
 
+class Logo(QtWidgets.QWidget):
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        self.logo = QtGui.QImage()
+        cwd = os.path.dirname(os.path.abspath(__file__))
+        if not self.logo.load(os.path.join(cwd, "peelCaptureLogo.png")):
+            print("Could not load logo")
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        painter.setBrush(QtGui.QBrush(QtGui.QColor(20, 21, 23)))
+        painter.drawRect(self.rect())
+        if not self.logo.isNull() and self.logo.height() > 0:
+            aspect = self.logo.width() / self.logo.height()
+            rect = QtCore.QRect(0, 0, self.height() * aspect, self.height())
+            rect = rect.marginsRemoved(QtCore.QMargins(6, 6, 6,6))
+            painter.drawImage(rect, self.logo)
+
 
 class Slate(QtWidgets.QDialog):
     def __init__(self, parent):
@@ -117,23 +149,33 @@ class Slate(QtWidgets.QDialog):
         layout.setSpacing(0)
 
         self.timecode = cmd.timecodeWidget(self, "Courier New", "Regular")
-        layout.addWidget(self.timecode)
+        layout.addWidget(self.timecode, 2)
 
         self.take = SlateWidget(self)
-        layout.addWidget(self.take)
+        layout.addWidget(self.take, 2)
 
         self.label1 = SlateWidget(self)
-        layout.addWidget(self.label1)
+        layout.addWidget(self.label1, 2)
 
         self.label2 = SlateWidget(self)
-        layout.addWidget(self.label2)
+        layout.addWidget(self.label2, 2)
 
         self.last_take = SlateWidget(self)
-        layout.addWidget(self.last_take)
+        layout.addWidget(self.last_take, 2)
+
+        self.logo = Logo(self)
+        layout.addWidget(self.logo, 1)
 
         self.setLayout(layout)
 
         self.resize(500, 350)
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            if self.isFullScreen():
+                self.showNormal()
+            else:
+                self.showFullScreen()
 
     def closeEvent(self, e):
         # tell the main app to uncheck the menu item

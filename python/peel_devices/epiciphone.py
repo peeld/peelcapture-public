@@ -137,9 +137,10 @@ class AddWidget(BaseDeviceWidget):
         self.phone_port.setToolTip("OSC port is listed in Live Link Face app settings")
         form_layout.addRow("Phone OSC Port", self.phone_port)
 
-        self.listen_ip = device_util.InterfaceCombo(False)
+        # Show all must be false as we need to send the phone a specific ip address to send data back to
+        self.listen_ip = device_util.InterfaceCombo(show_all=False)
         self.listen_ip.setToolTip("Listen ip should start with the same digits as phone port")
-        self.listen_ip.setCurrentText(settings.value("EpicPhoneListenIp", "--all--"))
+        self.listen_ip.setCurrentText(settings.value("EpicPhoneListenIp", ""))
         form_layout.addRow("Listen Ip", self.listen_ip)
 
         self.listen_port = QtWidgets.QLineEdit()
@@ -220,7 +221,7 @@ class EpicIPhone(PeelDeviceBase):
         self.prefix_name = False
         self.takes = {}
         self.current_take = None
-        self.query = False
+        self.query = None
         self.dispatcher = None
 
 
@@ -279,7 +280,6 @@ class EpicIPhone(PeelDeviceBase):
 
         self.ping_timer.start()
 
-
         print("Creating udp client")
         self.client = udp_client.SimpleUDPClient(self.phone_ip, self.phone_port)
 
@@ -299,6 +299,8 @@ class EpicIPhone(PeelDeviceBase):
         if self.listen_ip != "0.0.0.0":
             print("TARGET: " + str(self.listen_ip) + " " + str(self.listen_port))
             self.client.send_message("/OSCSetSendTarget", [self.listen_ip, self.listen_port])
+            self.client.send_message('/BatteryQuery', 1)
+            self.client.send_message('/ThermalsQuery', 1)
 
     def command(self, command, arg):
 
@@ -311,8 +313,6 @@ class EpicIPhone(PeelDeviceBase):
                 self.info = "No take#"
                 raise RuntimeError("Take number not set while starting recording")
 
-            # print(f"{arg} {type(arg)}")
-            # print(f"{self.takeNumber} {type(self.takeNumber)}")
             if self.prefix_name:
                 self.current_take = self.name + "_" + arg
             else:
@@ -325,8 +325,14 @@ class EpicIPhone(PeelDeviceBase):
     def callback(self, address, command, *args):
 
         cmd.writeLog(f"{self.name} callback from {address}  {command}  {args}\n")
+        #print(f"{self.name} callback from {address}  {command}  {args}\n")
 
         self.got_response = True
+
+        if command == "/OSCSetSendTargetConfirm":
+            self.state = "ONLINE"
+            self.push_state()
+            return
 
         if command == "/RecordStartConfirm":
             self.state = "RECORDING"
@@ -344,26 +350,23 @@ class EpicIPhone(PeelDeviceBase):
 
         if command == "/Battery":
 
-            last_state = self.state
-            if not self.query:
-                try:
-                    self.battery = float(args[0])
-                    if self.state != "RECORDING":
-                        self.state = "ONLINE"
-                except ValueError:
-                    print("Could not parse iphone battery level: " + str(args))
-                    self.state = "ERROR"
-            else:
-                if self.state == "RECORDING":
-                    return
+            if self.state == "OFFLINE":
                 self.state = "ONLINE"
-                # print("Phone: " + str(args) + " " + str(address))
 
-            if last_state != self.state:
-                self.push_state()
+            try:
+                self.battery = float(args[0])
+            except ValueError:
+                print("Could not parse iphone battery level: " + str(args))
+                self.state = "ERROR"
+
+            self.push_state()
 
         if command == "/Thermals":
-            self.thermals = args
+
+            if self.state == "OFFLINE":
+                self.state = "ONLINE"
+
+            self.thermals = args[0]
             self.push_state()
 
     def push_state(self):
@@ -371,7 +374,12 @@ class EpicIPhone(PeelDeviceBase):
         ret = []
 
         if self.battery is not None:
-            ret.append("Bat:%d%%" % int(self.battery * 100.0))
+            if self.battery is not None:
+                pc = int(self.battery * 100.0)
+                ret.append(f"Bat: {pc}%")
+
+        if self.thermals is not None:
+            ret.append(f"Therm: " + str(self.thermals))
 
         if self.takes is not None and len(self.takes) > 0:
             ret.append("Clips: %d" % len(self.takes))
@@ -380,6 +388,9 @@ class EpicIPhone(PeelDeviceBase):
         self.update_state(self.state, self.info)
 
     def ping_timeout(self):
+
+        # Called every 8 seconds
+
         if not self.got_response:
             # There has been no messages sent since the last ping, set the device to being offline
             if self.state != "OFFLINE":
@@ -391,11 +402,14 @@ class EpicIPhone(PeelDeviceBase):
             return
 
         self.got_response = False
-        if self.query:
+
+        # Alternate query
+        if self.query != "Battery":
             self.client.send_message('/BatteryQuery', 1)
+            self.query = "Battery"
         else:
             self.client.send_message('/ThermalsQuery', 1)
-        self.query = not self.query
+            self.query = "Thermal"
 
     def get_state(self, reason=None):
         if not self.enabled:

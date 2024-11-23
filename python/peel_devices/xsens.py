@@ -41,8 +41,7 @@ class XSensWidget(SimpleDeviceWidget):
 class XSens(XmlUdpDeviceBase):
 
     def __init__(self, name="XSens"):
-        super().__init__(name, "XSENS", 6004)
-        print("LOADED XSENS")
+        super().__init__(name, "XSENS", listen_port=6005, port=6004)
 
     def as_dict(self):
         return {'name': self.name,

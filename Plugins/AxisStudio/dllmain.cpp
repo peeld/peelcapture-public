@@ -42,34 +42,34 @@ public:
     void connectAxis() {
 
         mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPApplication_Version, reinterpret_cast<void**>(&mcpApplication));
-        if (!checkState("Getting Interface")) { return; }
+        if (!checkState("Getting Interface")) { teardown(); return; }
 
         mcpError = mcpApplication->CreateApplication(&application);
-        if (!checkState("Creating Application")) { return; }
+        if (!checkState("Creating Application")) { teardown(); return; }
 
         mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPSettings_Version, reinterpret_cast<void**>(&mcpSettings));
-        if (!checkState("Getting Mocap Interface")) { return; }
+        if (!checkState("Getting Mocap Interface")) { teardown(); return; }
 
         mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPAvatar_Version, reinterpret_cast<void**>(&avatarInterface));
-        if (!checkState("Getting Avatar Interface")) { return; }
+        if (!checkState("Getting Avatar Interface")) { teardown(); return; }
 
         mcpError = mcpSettings->CreateSettings(&mcpSettingsHandle);
-        if (!checkState("Creating settings")) { return; }
+        if (!checkState("Creating settings")) { teardown(); return; }
 
         mcpError = mcpSettings->SetSettingsBvhTransformation(MocapApi::BvhTransformation_Enable, mcpSettingsHandle);
-        if (!checkState("Setting bvh")) { return; }
+        if (!checkState("Setting bvh")) { teardown();  return; }
 
         mcpError = mcpSettings->SetSettingsTCP(host.c_str(), port, mcpSettingsHandle);
-        if (!checkState("Setting TCP")) { return; }
+        if (!checkState("Setting TCP")) { teardown(); return; }
 
         mcpError = mcpApplication->SetApplicationSettings(mcpSettingsHandle, application);
-        if (!checkState("Settings Application")) { return; }
+        if (!checkState("Settings Application")) { teardown(); return; }
 
         mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPRecordNotify_Version, reinterpret_cast<void**>(&notifyInterface));
-        if (!checkState("Getting RecordNotify Interface")) { return; }
+        if (!checkState("Getting RecordNotify Interface")) { teardown(); return; }
 
         mcpError = mcpApplication->OpenApplication(application);
-        if (!checkState("Opening Application")) { return; }
+        if (!checkState("Opening Application")) { teardown(); return; }
 
         //mcpError = MocapApi::MCPGetGenericInterface(MocapApi::IMCPCommand_Version, reinterpret_cast<void**>(&commandInterface));
         //if (!checkState("Creating command interface")) { return; }
@@ -177,6 +177,10 @@ public:
     {
         if (!enabled) {
             return true;
+        }
+
+        if (mcpApplication == nullptr) {
+            return false;
         }
 
         if (commandInterface == nullptr)

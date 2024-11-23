@@ -267,7 +267,7 @@ bool MotivePlugin::sendMotive(const char* command)
 
 const char* MotivePlugin::pluginCommand(const char* command)
 {
-	// Called via pluginCommand
+	// python sending a command to this pluing (via cmd.pluginCommand(...) )
 
 	logMessage(command);
 
@@ -285,6 +285,9 @@ const char* MotivePlugin::pluginCommand(const char* command)
 
 bool MotivePlugin::command(const char* name, const char* arg)
 {
+	if (!getState()) {
+		return false;
+	}
 
 	if (strcmp(name, "record") == 0) {
 		std::ostringstream oss;

@@ -374,7 +374,7 @@ class Unreal(Osc):
         if self.state == "OFFLINE":
             self.client_send("/OSCAddSendTarget", (self.listen_ip, self.listen_port))
 
-        return super(Unreal, self).get_state()
+        return super(Unreal, self).get_state(reason)
 
     def command(self, command, argument):
         if not self.client:

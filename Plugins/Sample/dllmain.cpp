@@ -17,7 +17,6 @@ public:
         frame = 0;
         host = "127.0.0.1";
         value = 0;
-        enabled = false;
         recording = false;
         info[0] = 0;
     };
@@ -46,7 +45,7 @@ public:
 
     bool command(const char* name, const char* arg)
     {
-        if (!enabled)
+        if (!getEnabled())
         {
             updateState("OFFLINE", info);
             return true;
@@ -65,33 +64,6 @@ public:
             updateState("ONLINE", info);
         }
         return true;
-    }
-
-    void setEnabled(bool b) override {
-        enabled = b;
-        if (!enabled) {
-            updateState("OFFLINE", info);
-        }
-        else {
-            updateState("ONLINE", info);
-        }
-    }
-
-    bool getEnabled() override {
-        return enabled;
-    }
-
-    const char* getInfo() override
-    {
-        return info;
-    }
-
-    const char* getState() override
-    {
-        if (enabled)
-            return "ONLINE";
-        else
-            return "OFFLINE";
     }
 
     const char* pluginCommand(const char* msg) override
@@ -142,25 +114,10 @@ public:
             oss << std::setfill('0') << std::setw(2) << s;
             oss << std::setfill('0') << std::setw(2) << f;
 
-            // strncpy(info, oss.str().c_str(), 255);
+            setInfo(oss.str().c_str());
 
             frame++;
 			
-			/*
-
-            if (f == 0) {
-                if (!enabled)
-                {
-                    updateState("OFFLINE", info);
-                }
-                else
-                {
-                    if (recording)
-                        updateState("RECORDING", info);
-                    else
-                        updateState("ONLINE", info);
-                }
-            }*/
         }
     }
 
