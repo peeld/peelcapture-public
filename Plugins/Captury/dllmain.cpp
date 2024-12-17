@@ -14,6 +14,9 @@
 #include <string>
 #include <algorithm>
 
+// #define DEBUG_STOP_OPT_FORCE    __pragma(optimize("", off))
+// DEBUG_STOP_OPT_FORCE
+
 static void newPose(CapturyActor* actor, CapturyPose* pose, int trackingQuality, void* userArg);
 static void actorChanged(int actorId, int mode, void* userArg);
 
@@ -21,7 +24,6 @@ class CapturyPlugin : public PeelCapDeviceInterface {
 public:
 
     CapturyPlugin() : running(true) {
-        host = "127.0.0.1";
         port = 2101;
         enabled = false;
         recording = false;
@@ -50,7 +52,7 @@ public:
         while (std::getline(ss, line)) {
 
             size_t pos = line.find('=');
-            if (pos != std::string::npos)
+            if (pos == std::string::npos)
                 continue;
 
             std::string name = line.substr(0, pos);
@@ -94,15 +96,15 @@ public:
         }
 
         if (strcmp(name, "record") == 0) {
-            std::string sn = currentShotName + "_" + std::string(arg);
+            std::string sn = arg;
             res = Captury_setShotName(sn.c_str());
             if (res != 0) {
                 updateState("ONLINE", "");
                 return true;
             }
 
-            res = Captury_startRecording();
-            if (res > 0) {
+            int64_t startTime = Captury_startRecording();
+            if (startTime > 0) {
                 updateState("RECORDING", "");
                 recording = true;
             } else {
@@ -171,7 +173,7 @@ public:
         return commandReply.c_str();
     }
 
-    void newFrame(uint64_t timestamp)
+    void newFrame(int64_t timestamp)
     {
         if (captureTimecode) {
             if (framerate == -1.0f) {
@@ -180,11 +182,28 @@ public:
                 framerate = ((float)num) / denom;
             }
 
+            if (timestamp < 0)
+                return;
+
             time_t nowInSeconds = timestamp / 1000000;
+            if (nowInSeconds > 86410) {
+                struct tm* today = gmtime(&nowInSeconds);
+                today->tm_hour = 0;
+                today->tm_min = 0;
+                today->tm_sec = 0;
+                time_t todayTime = mktime(today);
+                if (todayTime < nowInSeconds) {
+                    timestamp -= todayTime * 1000000l;
+                    nowInSeconds = timestamp / 1000000;
+                }
+            }
+
             struct tm *t = gmtime(&nowInSeconds);
-            uint64_t subSec = timestamp - nowInSeconds * 1000000;
-            int frame = subSec * framerate / 1000000;
-            timecode(t->tm_hour, t->tm_min, t->tm_sec, frame, framerate, false);
+            if (t != NULL) {
+                uint64_t subSec = timestamp - nowInSeconds * 1000000;
+                int frame = subSec * framerate / 1000000;
+                timecode(t->tm_hour, t->tm_min, t->tm_sec, frame, framerate, false);
+            }
         }
     }
 
@@ -254,32 +273,41 @@ public:
 protected:
     void connectToCaptury()
     {
-        int res = Captury_connect(host.c_str(), port);
+        if (host.empty() || !enabled)
+            return;
 
-        if (res != 1) {
-            updateState("ERROR", "Error Connecting");
-        }
-
-        const char* status =  Captury_getStatus();
+        const char* status = Captury_getStatus();
         if (status == nullptr) {
-            strcpy(info, "No Connection");
-            updateState("ERROR", "No Connection");
-        } else {
-            updateState("ONLINE", status);
+            int res = Captury_connect(host.c_str(), port);
+
+            if (res != 1) {
+                updateState("ERROR", "Error Connecting");
+            }
+
+            status = Captury_getStatus();
+            if (status == nullptr) {
+                strcpy(info, "No Connection");
+                updateState("ERROR", "No Connection");
+            } else {
+                updateState("ONLINE", status);
+            }
         }
 
         if (captureTimecode) {
             Captury_registerNewPoseCallback(newPose, this);
-            Captury_startStreaming(CAPTURY_STREAM_COMPRESSED);
+            Captury_startStreaming(CAPTURY_STREAM_POSES | CAPTURY_STREAM_COMPRESSED);
         }
         if (captureSubjects) {
             Captury_registerActorChangedCallback(::actorChanged, this);
+            if (!captureTimecode)
+                Captury_startStreaming(CAPTURY_STREAM_COMPRESSED);
         }
     }
 
     void disonnectFromCaptury()
     {
         Captury_registerNewPoseCallback(NULL, NULL);
+        Captury_registerActorChangedCallback(NULL, NULL);
         Captury_stopStreaming();
 
         Captury_disconnect();
@@ -295,6 +323,8 @@ static void newPose(CapturyActor* actor, CapturyPose* pose, int trackingQuality,
 static void actorChanged(int actorId, int mode, void* userArg)
 {
     const CapturyActor* actor = Captury_getActor(actorId);
+    if (actor == NULL)
+        return;
 
     ((CapturyPlugin*)userArg)->actorChanged(actor->name, actor->numJoints < 3, (CapturyActorStatus)mode);
     Captury_freeActor(actor);
