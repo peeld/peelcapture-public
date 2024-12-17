@@ -9,7 +9,7 @@
 #include <memory>
 #include <sstream>
 #include <iomanip>
-
+#include <cstring>
 
 
 class CapturyPlugin : public PeelCapDeviceInterface {
@@ -40,7 +40,7 @@ public:
 
         std::string stringValue(value);
         size_t pos = stringValue.find(':');
-        if (pos != -1)
+        if (pos != std::string::npos)
         {
             this->host = stringValue.substr(0, pos);
             this->port = atoi(stringValue.substr(pos + 1).c_str());
@@ -114,7 +114,7 @@ public:
             {
                 updateState("RECORDING", "");
                 recording = true;
-            }            
+            }
             else
             {
                 updateState("ERROR", "Could not record");
@@ -149,7 +149,7 @@ public:
     void setEnabled(bool b) override {
         enabled = b;
         if (!enabled) {
-            this->disonnectFromCaptury();            
+            this->disonnectFromCaptury();
         }
         else {
             this->connectToCaptry();
