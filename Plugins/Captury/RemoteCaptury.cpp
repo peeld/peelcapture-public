@@ -160,6 +160,9 @@ static uint64_t dataReceivedTime;
 static uint64_t mostRecentPoseReceivedTime; // time pose was received
 static uint64_t mostRecentPoseReceivedTimestamp; // timestamp of that pose
 
+static int framerateNumerator = -1.0f;
+static int framerateDenominator = -1.0f;
+
 const char* CapturyActorStatusString[] = {"scaling", "tracking", "stopped", "deleted", "unknown"};
 
 struct ActorData {
@@ -245,10 +248,15 @@ static std::string lastStatusMessage = "disconnected";
 static bool getLocalPoses = false;
 
 static CapturyNewPoseCallback newPoseCallback = NULL;
+static void* newPoseArg = NULL;
 static CapturyNewAnglesCallback newAnglesCallback = NULL;
+static void* newAnglesArg = NULL;
 static CapturyActorChangedCallback actorChangedCallback = NULL;
+static void* actorChangedArg = NULL;
 static CapturyARTagCallback arTagCallback = NULL;
+static void* arTagArg = NULL;
 static CapturyImageCallback imageCallback = NULL;
+static void* imageArg = NULL;
 
 static bool		handshakeFinished = false;
 static bool		isStreamThreadRunning = false;
@@ -552,6 +560,10 @@ const char* Captury_getHumanReadableMessageType(CapturyPacketTypes type)
 		return "<enable remote logging>";
 	case capturyError:
 		return "<error>";
+	case capturyGetFramerate:
+		return "<get framerate>";
+	case capturyFramerate:
+		return "<framerate>";
 	}
 	return "<unknown message type>";
 }
@@ -973,7 +985,7 @@ static bool receive(SOCKET& sok)
 				actorsById[actor->id] = actor;
 				unlockMutex(&mutex);
 				if (actorChangedCallback)
-					actorChangedCallback(actor->id, actorData[actor->id].status);
+					actorChangedCallback(actor->id, actorData[actor->id].status, actorChangedArg);
 			} else {
 				lockMutex(&partialActorMutex);
 				partialActors[actor->id] = actor;
@@ -1045,7 +1057,7 @@ static bool receive(SOCKET& sok)
 				actorsById[actor->id] = actor;
 				unlockMutex(&mutex);
 				if (actorChangedCallback)
-					actorChangedCallback(actor->id, actorData[actor->id].status);
+					actorChangedCallback(actor->id, actorData[actor->id].status, actorChangedArg);
 				lockMutex(&partialActorMutex);
 				partialActors.erase(actor->id);
 				unlockMutex(&partialActorMutex);
@@ -1122,6 +1134,11 @@ static bool receive(SOCKET& sok)
 				syncSamples.erase(syncSamples.begin());
 			updateSync(t);
 			log("local: %" PRIu64 " remote: %" PRIu64 " => offset %" PRId64 ", roundtrip %" PRId64 "\n", t, tp->timestamp, tp->timestamp - t, pongTime - pingTime);
+			break; }
+		case capturyFramerate: {
+			CapturyFrameratePacket* fp = (CapturyFrameratePacket*)p;
+			framerateNumerator = fp->numerator;
+			framerateDenominator = fp->denominator;
 			break; }
 		case capturyCustom: {
 			CapturyCustomPacket* ccp = (CapturyCustomPacket*)p;
@@ -1204,7 +1221,7 @@ static bool receive(SOCKET& sok)
 		case capturyActorModeChanged: {
 			CapturyActorModeChangedPacket* amc = (CapturyActorModeChangedPacket*)p;
 			if (actorChangedCallback != NULL)
-				actorChangedCallback(amc->actor, amc->mode);
+				actorChangedCallback(amc->actor, amc->mode, actorChangedArg);
 			lockMutex(&mutex);
 			if (actorData.count(amc->actor))
 				actorData[amc->actor].status = (CapturyActorStatus)amc->mode;
@@ -1262,7 +1279,7 @@ static void deleteActors()
 	unlockMutex(&mutex);
 
 	for (int id : deletedActorIds)
-		actorChangedCallback(id, ACTOR_DELETED);
+		actorChangedCallback(id, ACTOR_DELETED, actorChangedArg);
 }
 
 #ifdef WIN32
@@ -1338,7 +1355,7 @@ static void receivedPose(CapturyPose* pose, int actorId, ActorData* aData, uint6
 		aData->status = ACTOR_TRACKING;
 		if (actorChangedCallback) {
 			unlockMutex(&mutex);
-			actorChangedCallback(actorId, ACTOR_TRACKING);
+			actorChangedCallback(actorId, ACTOR_TRACKING, actorChangedArg);
 			lockMutex(&mutex);
 		}
 	}
@@ -1348,7 +1365,7 @@ static void receivedPose(CapturyPose* pose, int actorId, ActorData* aData, uint6
 		CapturyActor* actor = a.get();
 		returnedActors[actor] = a;
 		unlockMutex(&mutex);
-		newPoseCallback(actor, pose, aData->trackingQuality);
+		newPoseCallback(actor, pose, aData->trackingQuality, newPoseArg);
 		lockMutex(&mutex);
 	}
 
@@ -1368,7 +1385,7 @@ static void receivedPose(CapturyPose* pose, int actorId, ActorData* aData, uint6
 
 	unlockMutex(&mutex);
 	for (int id : stoppedActorIds)
-		actorChangedCallback(id, ACTOR_STOPPED);
+		actorChangedCallback(id, ACTOR_STOPPED, actorChangedArg);
 }
 
 static void decompressPose(CapturyPose* pose, uint8_t* v, CapturyActor* actor)
@@ -1685,7 +1702,7 @@ static void* streamLoop(void* arg)
 			unlockMutex(&mutex);
 
 			if (finished && imageCallback)
-				imageCallback(&currentImagesDone[cip->actor]);
+				imageCallback(&currentImagesDone[cip->actor], imageArg);
 
 			continue;
 		}
@@ -1701,14 +1718,14 @@ static void* streamLoop(void* arg)
 			//	log("  id %d: orient % 4.1f,% 4.1f,% 4.1f\n", art->tags[i].id, art->tags[i].transform.rotation[0], art->tags[i].transform.rotation[1], art->tags[i].transform.rotation[2]);
 			unlockMutex(&mutex);
 			if (arTagCallback != NULL)
-				arTagCallback(art->numTags, &art->tags[0]);
+				arTagCallback(art->numTags, &art->tags[0], arTagArg);
 			continue;
 		}
 
 		if (cpp->type == capturyAngles) {
 			CapturyAnglesPacket* ang = (CapturyAnglesPacket*)buffer.data();
 			if (newAnglesCallback != NULL)
-				newAnglesCallback(Captury_getActor(ang->actor), ang->numAngles, ang->angles);
+				newAnglesCallback(Captury_getActor(ang->actor), ang->numAngles, ang->angles, newAnglesArg);
 			lockMutex(&mutex);
 			currentAngles[ang->actor].resize(ang->numAngles);
 			for (int i = 0; i < ang->numAngles; ++i)
@@ -1721,7 +1738,7 @@ static void* streamLoop(void* arg)
 			CapturyActorModeChangedPacket* amc = (CapturyActorModeChangedPacket*)buffer.data();
 			log("received actorModeChanged packet %x %d\n", amc->actor, amc->mode);
 			if (actorChangedCallback != NULL)
-				actorChangedCallback(amc->actor, amc->mode);
+				actorChangedCallback(amc->actor, amc->mode, actorChangedArg);
 			lockMutex(&mutex);
 			if (actorData.count(amc->actor))
 				actorData[amc->actor].status = (CapturyActorStatus)amc->mode;
@@ -2241,7 +2258,7 @@ extern "C" CapturyPose* Captury_getCurrentPoseAndTrackingConsistencyForActor(int
 
 	unlockMutex(&mutex);
 	for (int id : stoppedActorIds)
-		actorChangedCallback(id, ACTOR_STOPPED);
+		actorChangedCallback(id, ACTOR_STOPPED, actorChangedArg);
 	lockMutex(&mutex);
 
 	if (!stillCurrent) {
@@ -2633,6 +2650,22 @@ extern "C" int64_t Captury_getTimeOffset()
 	return offset;
 }
 
+extern "C" void Captury_getFramerate(int* numerator, int* denominator)
+{
+	CapturyRequestPacket packet;
+	packet.type = capturyGetFramerate;
+	packet.size = sizeof(packet);
+
+	if (!sendPacket((CapturyRequestPacket*)&packet, capturyFramerate)) {
+		*numerator = -1;
+		*denominator = -1;
+		return;
+	}
+
+	*numerator = framerateNumerator;
+	*denominator = framerateDenominator;
+}
+
 extern "C" int Captury_setHalfplaneConstraint(int actorId, int jointIndex, float* originOffset, float* normal, float offset, uint64_t timestamp, float weight)
 {
 	CapturyConstraintPacket ccp;
@@ -2820,7 +2853,7 @@ int Captury_sendCustomPacket(char* pluginName, int size, void* data)
 }
 
 
-int Captury_registerNewPoseCallback(CapturyNewPoseCallback callback)
+int Captury_registerNewPoseCallback(CapturyNewPoseCallback callback, void* userArg)
 {
 	if (newPoseCallback != NULL) { // callback already exists
 		if (callback == NULL) { // remove callback
@@ -2834,11 +2867,12 @@ int Captury_registerNewPoseCallback(CapturyNewPoseCallback callback)
 		return 0;
 
 	newPoseCallback = callback;
+	newPoseArg = userArg;
 	return 1;
 }
 
 
-int Captury_registerNewAnglesCallback(CapturyNewAnglesCallback callback)
+int Captury_registerNewAnglesCallback(CapturyNewAnglesCallback callback, void* userArg)
 {
 	if (newAnglesCallback != NULL) { // callback already exists
 		if (callback == NULL) { // remove callback
@@ -2852,11 +2886,12 @@ int Captury_registerNewAnglesCallback(CapturyNewAnglesCallback callback)
 		return 0;
 
 	newAnglesCallback = callback;
+	newAnglesArg = userArg;
 	return 1;
 }
 
 
-int Captury_registerActorChangedCallback(CapturyActorChangedCallback callback)
+int Captury_registerActorChangedCallback(CapturyActorChangedCallback callback, void* userArg)
 {
 	if (actorChangedCallback != NULL) { // callback already exists
 		if (callback == NULL) { // remove callback
@@ -2870,11 +2905,12 @@ int Captury_registerActorChangedCallback(CapturyActorChangedCallback callback)
 		return 0;
 
 	actorChangedCallback = callback;
+	actorChangedArg = userArg;
 	return 1;
 }
 
 
-int Captury_registerARTagCallback(CapturyARTagCallback callback)
+int Captury_registerARTagCallback(CapturyARTagCallback callback, void* userArg)
 {
 	if (arTagCallback != NULL) { // callback already exists
 		if (callback == NULL) { // remove callback
@@ -2888,11 +2924,12 @@ int Captury_registerARTagCallback(CapturyARTagCallback callback)
 		return 0;
 
 	arTagCallback = callback;
+	arTagArg = userArg;
 	return 1;
 }
 
 
-int Captury_registerImageStreamingCallback(CapturyImageCallback callback)
+int Captury_registerImageStreamingCallback(CapturyImageCallback callback, void* userArg)
 {
 	if (imageCallback != NULL) {
 		if (callback == NULL) { // callback already exists
@@ -2904,7 +2941,7 @@ int Captury_registerImageStreamingCallback(CapturyImageCallback callback)
 		return 0;
 
 	imageCallback = callback;
-
+	imageArg = userArg;
 	return 1;
 }
 

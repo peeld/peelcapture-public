@@ -158,25 +158,25 @@ CAPTURY_DLL_EXPORT CapturyAngleData* Captury_getCurrentAngles(int actorId, int* 
 // simple function for releasing memory of a pose
 CAPTURY_DLL_EXPORT void Captury_freePose(CapturyPose* pose);
 
-typedef void (*CapturyNewPoseCallback)(CapturyActor*, CapturyPose*, int trackingQuality);
+typedef void (*CapturyNewPoseCallback)(CapturyActor*, CapturyPose*, int trackingQuality, void* userArg);
 
 // register callback that will be called when a new pose is received
 // the callback will be run in a different thread than the main application
 // try to be quick in the callback
 // returns 1 if successful otherwise 0
-CAPTURY_DLL_EXPORT int Captury_registerNewPoseCallback(CapturyNewPoseCallback callback);
+CAPTURY_DLL_EXPORT int Captury_registerNewPoseCallback(CapturyNewPoseCallback callback, void* userArg);
 
-typedef void (*CapturyNewAnglesCallback)(const CapturyActor*, int numAngles, struct CapturyAngleData* values);
+typedef void (*CapturyNewAnglesCallback)(const CapturyActor*, int numAngles, struct CapturyAngleData* values, void* userArg);
 
 // register callback that will be called when new physiological angle data is received
 // the callback will be run in a different thread than the main application
 // try to be quick in the callback
 // returns 1 if successful otherwise 0
-CAPTURY_DLL_EXPORT int Captury_registerNewAnglesCallback(CapturyNewAnglesCallback callback);
+CAPTURY_DLL_EXPORT int Captury_registerNewAnglesCallback(CapturyNewAnglesCallback callback, void* userArg);
 
 typedef enum { ACTOR_SCALING = 0, ACTOR_TRACKING = 1, ACTOR_STOPPED = 2, ACTOR_DELETED = 3, ACTOR_UNKNOWN = 4 } CapturyActorStatus;
 extern const char* CapturyActorStatusString[];
-typedef void (*CapturyActorChangedCallback)(int actorId, int mode);
+typedef void (*CapturyActorChangedCallback)(int actorId, int mode, void* userArg);
 // returns CapturyActorStatus if the actorId is not known returns ACTOR_UNKNOWN
 // this retrieves the local status. it causes no network traffic and should be fast.
 CAPTURY_DLL_EXPORT int Captury_getActorStatus(int actorId);
@@ -185,9 +185,9 @@ CAPTURY_DLL_EXPORT int Captury_getActorStatus(int actorId);
 // the status of an existing actor changes
 // status can be one of CapturyActorStatus
 // returns 1 if successful otherwise 0
-CAPTURY_DLL_EXPORT int Captury_registerActorChangedCallback(CapturyActorChangedCallback callback);
+CAPTURY_DLL_EXPORT int Captury_registerActorChangedCallback(CapturyActorChangedCallback callback, void* userArg);
 
-typedef void (*CapturyARTagCallback)(int num, CapturyARTag*);
+typedef void (*CapturyARTagCallback)(int num, CapturyARTag*, void* userArg);
 
 // register callback that will be called when an artag is detected
 // pass NULL if you want to deregister the callback
@@ -201,7 +201,7 @@ CAPTURY_DLL_EXPORT CapturyARTag* Captury_getCurrentARTags();
 CAPTURY_DLL_EXPORT void Captury_freeARTags(CapturyARTag* artags);
 
 // do NOT free the image
-typedef void (*CapturyImageCallback)(const CapturyImage* img);
+typedef void (*CapturyImageCallback)(const CapturyImage* img, void* userArg);
 
 // register callback that will be called when a new frame was streamed from this particular camera
 // pass NULL to deregister
@@ -250,6 +250,8 @@ CAPTURY_DLL_EXPORT uint64_t Captury_getTime();
 // offset = CapturyLive.time - local.time
 CAPTURY_DLL_EXPORT int64_t Captury_getTimeOffset();
 
+// returns the current tracking framerate
+CAPTURY_DLL_EXPORT void Captury_getFramerate(int* numerator, int* denominator);
 
 // get the last error message
 CAPTURY_DLL_EXPORT char* Captury_getLastErrorMessage();
@@ -456,6 +458,8 @@ typedef enum { capturyActors = 1, capturyActor = 2,
 	       capturyMessage = 75,
 	       capturyEnableRemoteLogging = 76,
 	       capturyDisableRemoteLogging = 77,
+	       capturyGetFramerate = 78,
+	       capturyFramerate = 79,
 	       capturyError = 0 } CapturyPacketTypes;
 
 // returns a string for nicer error messages
@@ -925,6 +929,15 @@ struct CapturyLogPacket {
 
 	uint8_t		logLevel;
 	char		message[];
+};
+
+// sent to client
+struct CapturyFrameratePacket {
+	int32_t		type;	// capturyFramerate
+	int32_t		size;	// size of full message including type and size
+
+	int		numerator;
+	int		denominator;
 };
 
 #pragma pack(pop)

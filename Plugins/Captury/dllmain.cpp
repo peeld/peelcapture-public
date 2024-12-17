@@ -4,83 +4,78 @@
 #include "RemoteCaptury.h"
 
 #include <iostream>
-#include <chrono>
 #include <thread>
 #include <memory>
 #include <sstream>
 #include <iomanip>
 #include <cstring>
+#include <unordered_set>
+#include <vector>
+#include <string>
+#include <algorithm>
 
+static void newPose(CapturyActor* actor, CapturyPose* pose, int trackingQuality, void* userArg);
+static void actorChanged(int actorId, int mode, void* userArg);
 
 class CapturyPlugin : public PeelCapDeviceInterface {
 public:
 
     CapturyPlugin() : running(true) {
-        frame = 0;
         host = "127.0.0.1";
         port = 2101;
-        value = 0;
         enabled = false;
         recording = false;
-        info[0] = 0;
+        captureTimecode = false;
+        captureSubjects = false;
+        framerate = -1.0f;
+        info[0] = '\0';
     };
 
-    ~CapturyPlugin() {
+    ~CapturyPlugin()
+    {
         running = false;
     }
 
     const char* device() { return "Captury"; };
 
-    bool reconfigure(const char* value) override {
-
-        if (value == nullptr)
-        {
+    bool reconfigure(const char* values) override
+    {
+        if (values == nullptr) {
             return false;
         }
 
-        std::string stringValue(value);
-        size_t pos = stringValue.find(':');
-        if (pos != std::string::npos)
-        {
-            this->host = stringValue.substr(0, pos);
-            this->port = atoi(stringValue.substr(pos + 1).c_str());
-        }
-        else
-        {
-            this->host = stringValue;
-            this->port = 2101;
+        std::istringstream ss(values);
+
+        std::string line;
+        while (std::getline(ss, line)) {
+
+            size_t pos = line.find('=');
+            if (pos != std::string::npos)
+                continue;
+
+            std::string name = line.substr(0, pos);
+            std::string value = line.substr(pos + 1);
+            if (name.empty() || value.empty())
+                continue;
+
+            if (name == "host") {
+                size_t pos = value.find(':');
+                if (pos != std::string::npos) {
+                    this->host = value.substr(0, pos);
+                    this->port = atoi(value.substr(pos + 1).c_str());
+                } else {
+                    this->host = value;
+                    this->port = 2101;
+                }
+            } else if (name == "timecode") {
+                this->captureTimecode = (value == "1");
+            } else if (name == "subjects") {
+                this->captureSubjects = (value == "1");
+            }
         }
 
-        connectToCaptry();
+        connectToCaptury();
         return true;
-    }
-
-    void connectToCaptry()
-    {
-        int res = Captury_connect(host.c_str(), port);
-
-        if (res != 1)
-        {
-            updateState("ERROR", "Error Connecting");
-        }
-
-        const char* status =  Captury_getStatus();
-        if (status == nullptr)
-        {
-            strcpy(info, "No Connection");
-            updateState("ERROR", "No Connection");
-        }
-        else
-        {
-            updateState("ONLINE", status);
-        }
-
-    }
-
-    void disonnectFromCaptury()
-    {
-        Captury_disconnect();
-        updateState("OFFLINE", "");
     }
 
     void teardown() override
@@ -93,67 +88,55 @@ public:
     {
         int res;
 
-        if (!enabled)
-        {
+        if (!enabled) {
             updateState("OFFLINE", "");
             return true;
         }
 
-        if (strcmp(name, "record") == 0)
-        {
+        if (strcmp(name, "record") == 0) {
             std::string sn = currentShotName + "_" + std::string(arg);
             res = Captury_setShotName(sn.c_str());
-            if (res != 0)
-            {
+            if (res != 0) {
                 updateState("ONLINE", "");
                 return true;
             }
 
             res = Captury_startRecording();
-            if (res > 0)
-            {
+            if (res > 0) {
                 updateState("RECORDING", "");
                 recording = true;
-            }
-            else
-            {
+            } else {
                 updateState("ERROR", "Could not record");
             }
 
             return true;
         }
 
-        if (strcmp(name, "stop") == 0)
-        {
+        if (strcmp(name, "stop") == 0) {
             int res = Captury_stopRecording();
-            if (res == 1)
-            {
+            if (res == 1) {
                 updateState("ONLINE", "");
                 recording = false;
-            }
-            else
-            {
+            } else {
                 updateState("ERROR", "Could not stop");
             }
             return true;
         }
 
-        if (strcmp(name, "shotName") == 0)
-        {
+        if (strcmp(name, "shotName") == 0) {
             currentShotName = arg;
         }
 
         return true;
     }
 
-    void setEnabled(bool b) override {
+    void setEnabled(bool b) override
+    {
         enabled = b;
         if (!enabled) {
             this->disonnectFromCaptury();
-        }
-        else {
-            this->connectToCaptry();
-
+        } else {
+            this->connectToCaptury();
         }
     }
 
@@ -172,13 +155,10 @@ public:
             return "OFFLINE";
 
         const char* status = Captury_getStatus();
-        if (status == nullptr)
-        {
+        if (status == nullptr) {
             return "ERROR";
-        }
-        else
-        {
-            strncpy(info, status, 255);
+        } else {
+            strncpy(info, status, 254);
             return "ONLINE";
         }
     }
@@ -191,19 +171,134 @@ public:
         return commandReply.c_str();
     }
 
+    void newFrame(uint64_t timestamp)
+    {
+        if (captureTimecode) {
+            if (framerate == -1.0f) {
+                int num, denom;
+                Captury_getFramerate(&num, &denom);
+                framerate = ((float)num) / denom;
+            }
+
+            time_t nowInSeconds = timestamp / 1000000;
+            struct tm *t = gmtime(&nowInSeconds);
+            uint64_t subSec = timestamp - nowInSeconds * 1000000;
+            int frame = subSec * framerate / 1000000;
+            timecode(t->tm_hour, t->tm_min, t->tm_sec, frame, framerate, false);
+        }
+    }
+
+    void actorChanged(const std::string& name, bool isProp, CapturyActorStatus mode)
+    {
+        switch (mode) {
+        case ACTOR_SCALING:
+        case ACTOR_TRACKING:
+            if (isProp) {
+                if (knownProps.count(name))
+                    return;
+                knownProps.insert(name);
+            } else {
+                if (knownSubjects.count(name))
+                    return;
+                knownSubjects.insert(name);
+            }
+            break;
+        case ACTOR_STOPPED:
+        case ACTOR_DELETED:
+        case ACTOR_UNKNOWN:
+            if (isProp) {
+                if (knownSubjects.count(name) == 0)
+                    return;
+                knownSubjects.erase(name);
+            } else {
+                if (knownSubjects.count(name) == 0)
+                    return;
+                knownSubjects.erase(name);
+            }
+            break;
+        }
+
+        if (isProp) {
+            std::vector<std::string> propList;
+            propList.insert(propList.end(), knownProps.begin(), knownProps.end());
+            std::sort(propList.begin(), propList.end());
+
+            std::vector<const char*> stringList;
+            for (int i = 0; i < (int)propList.size(); i++) { stringList.push_back(propList[i].c_str()); }
+            this->props(&stringList[0], (int)stringList.size());
+        } else {
+            std::vector<std::string> subjectList;
+            subjectList.insert(subjectList.end(), knownSubjects.begin(), knownSubjects.end());
+            std::sort(subjectList.begin(), subjectList.end());
+
+            std::vector<const char*> stringList;
+            for (int i = 0; i < (int)subjectList.size(); i++) { stringList.push_back(subjectList[i].c_str()); }
+            this->subjects(&stringList[0], (int)stringList.size());
+        }
+    }
 
     char info[255];
     bool enabled;
     bool running;
     bool recording;
-    size_t frame;
+    bool captureTimecode;
+    bool captureSubjects;
     std::string host;
     int port;
-    int value;
+    float framerate;
     std::string currentShotName;
     std::string commandReply;
+    std::unordered_set<std::string> knownSubjects;
+    std::unordered_set<std::string> knownProps;
 
+protected:
+    void connectToCaptury()
+    {
+        int res = Captury_connect(host.c_str(), port);
+
+        if (res != 1) {
+            updateState("ERROR", "Error Connecting");
+        }
+
+        const char* status =  Captury_getStatus();
+        if (status == nullptr) {
+            strcpy(info, "No Connection");
+            updateState("ERROR", "No Connection");
+        } else {
+            updateState("ONLINE", status);
+        }
+
+        if (captureTimecode) {
+            Captury_registerNewPoseCallback(newPose, this);
+            Captury_startStreaming(CAPTURY_STREAM_COMPRESSED);
+        }
+        if (captureSubjects) {
+            Captury_registerActorChangedCallback(::actorChanged, this);
+        }
+    }
+
+    void disonnectFromCaptury()
+    {
+        Captury_registerNewPoseCallback(NULL, NULL);
+        Captury_stopStreaming();
+
+        Captury_disconnect();
+        updateState("OFFLINE", "");
+    }
 };
+
+static void newPose(CapturyActor* actor, CapturyPose* pose, int trackingQuality, void* userArg)
+{
+    ((CapturyPlugin*)userArg)->newFrame(pose->timestamp);
+}
+
+static void actorChanged(int actorId, int mode, void* userArg)
+{
+    const CapturyActor* actor = Captury_getActor(actorId);
+
+    ((CapturyPlugin*)userArg)->actorChanged(actor->name, actor->numJoints < 3, (CapturyActorStatus)mode);
+    Captury_freeActor(actor);
+}
 
 extern "C" PEEL_PLUGIN_API PeelCapDeviceInterface * createPlugin() {
     return new CapturyPlugin();
