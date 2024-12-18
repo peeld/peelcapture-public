@@ -2,20 +2,22 @@
 
 #include <stdint.h>
 
-typedef uint32_t uint;
-
 #pragma pack(push, 1)
 
 struct CapturyJoint {
 	char		name[64];
-	int		parent;		// index of parent joint or -1 for root node
+	int32_t		parent;		// index of parent joint or -1 for root node
 	float		offset[3];	// offset to parent joint
 	float		orientation[3];	// XYZ quaternion - w needs to be reconstructed (w >= 0)
 	float		scale[3];	// local scale
 };
 
+struct CapturyBlendShape {
+	char		name[64];
+};
+
 struct CapturyBlob {
-	int		parent;		// index of parent joint or -1 for root node
+	int32_t		parent;		// index of parent joint or -1 for root node
 	float		offset[3];	// offset to parent joint
 	float		size;		// radius
 	float		color[3];	// RGB color [0..1]
@@ -23,12 +25,13 @@ struct CapturyBlob {
 
 struct CapturyActor {
 	char		name[32];
-	int		id;
-	int		numJoints;
+	int32_t		id;
+	int32_t		numJoints;
 	CapturyJoint*	joints;
-	int		numBlobs;
+	int32_t		numBlobs;
 	CapturyBlob*	blobs;
-	int		padding;	// pad to 8 byte alignment
+	int32_t		numBlendShapes;
+	CapturyBlendShape* blendShapes;
 };
 
 struct CapturyTransform {
@@ -39,17 +42,19 @@ struct CapturyTransform {
 enum CapturyPoseFlags {CAPTURY_LEFT_FOOT_ON_GROUND = 0x01, CAPTURY_RIGHT_FOOT_ON_GROUND = 0x02};
 
 struct CapturyPose {
-	int			actor;
+	int32_t			actor;
 	uint64_t		timestamp;	// in microseconds - since the start of Captury Live
-	int			numTransforms;
+	int32_t			numTransforms;
 	CapturyTransform*	transforms;	// one CapturyTransform per joint in global (world space) coordinates
 						// the transforms are in the same order as the joints
 						// in the corresponding CapturyActor.joints array
 	uint32_t		flags;		// feet-on-ground
+	int32_t			numBlendShapes;
+	float*			blendShapeActivations;
 };
 
 struct CapturyIMUPose {
-	uint			imu;
+	uint32_t		imu;
 	uint64_t		timestamp;	// in microseconds - since the start of Captury Live
 	float			orientation[3];
 	float			acceleration[3];// linear acceleration
@@ -57,7 +62,7 @@ struct CapturyIMUPose {
 };
 
 struct CapturyConstraint {
-	int		actor;
+	int32_t		actor;
 	char		jointName[24];
 	CapturyTransform transform;
 	float		weight;
@@ -67,7 +72,7 @@ struct CapturyConstraint {
 
 struct CapturyCamera {
 	char		name[32];
-	int		id;
+	int32_t		id;
 	float		position[3];
 	float		orientation[3];
 	float		sensorSize[2];	// in mm
@@ -86,9 +91,9 @@ struct CapturyCamera {
 };
 
 struct CapturyImage {
-	int		width;
-	int		height;
-	int		camera;		// camera index
+	int32_t		width;
+	int32_t		height;
+	int32_t		camera;		// camera index
 	uint64_t	timestamp;	// in microseconds
 	uint8_t*	data;		// packed image data: stride = width*3 bytes
 					// data is expected to be formatted as RGB
@@ -96,17 +101,17 @@ struct CapturyImage {
 };
 
 struct CapturyDepthImage {
-	int		width;
-	int		height;
-	int		camera;
+	int32_t		width;
+	int32_t		height;
+	int32_t		camera;
 	uint64_t	timestamp;	// in microseconds
 	uint16_t*	data;		// packed image data: stride = width*2 bytes
 };
 
 struct CapturyARTag {
-	int32_t			id;
+	int32_t		id;
 
-	CapturyTransform	transform;
+	CapturyTransform transform;
 };
 
 struct CapturyCornerDetection {
