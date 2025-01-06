@@ -1,3 +1,6 @@
 [submodule "Plugins/AxisStudio/MocapApi"]
 	path = Plugins/AxisStudio/MocapApi
 	url = https://github.com/pnmocap/MocapApi
+[submodule "Plugins/Captury/RemoteCaptury"]
+	path = Plugins/Captury/RemoteCaptury
+	url = https://github.com/thecaptury/RemoteCaptury

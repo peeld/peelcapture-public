@@ -217,7 +217,9 @@ void ViconPlugin::run()
                     mSubjects = subjectList;
                     std::vector<const char*> stringList;
                     for (int i = 0; i < mSubjects.size(); i++) { stringList.push_back(mSubjects[i].c_str()); }
-                    this->subjects(&stringList[0], (int)stringList.size());
+                    if (stringList.size() == 0) { this->subjects(nullptr, 0); }
+                    else { this->subjects(&stringList[0], (int)stringList.size()); }
+                    
                 }
 
                 if (propList != this->mProps)
@@ -225,7 +227,8 @@ void ViconPlugin::run()
                     mProps = propList;
                     std::vector<const char*> stringList;
                     for (int i = 0; i < mProps.size(); i++) { stringList.push_back(mProps[i].c_str()); }
-                    this->props(&stringList[0], (int)stringList.size());
+                    if (stringList.size() == 0) { this->props(nullptr, 0); }
+                    else { this->props(&stringList[0], (int)stringList.size()); }
                 }
             }
         }

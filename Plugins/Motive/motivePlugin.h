@@ -43,6 +43,9 @@ private:
 	//! Capture subject info
 	bool captureSubjects;
 
+	//! Respond to transport events (play etc)
+	bool transport;
+
 	//! Capture and emit timecode
 	bool captureTimecode;
 

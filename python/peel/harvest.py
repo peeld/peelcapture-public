@@ -27,6 +27,49 @@ from PySide6 import QtWidgets, QtCore, QtGui
 import os.path
 from PeelApp import cmd
 from peel_devices import DownloadThread
+from peel import file_util
+
+
+class TimeSeriesWidget(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.samples = []  # List of integer sample values
+
+    def append(self, value):
+        self.samples.append(value)
+        if len(self.samples) > 100:
+            self.samples.pop(0)
+        self.repaint()
+
+    def paintEvent(self, event):
+
+        painter = QtGui.QPainter(self)
+        painter.setPen(QtGui.QColor(22, 60, 30))
+        painter.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0)))
+        painter.drawRect(0, 0, 100, self.height() - 1)
+
+        if not self.samples:
+            return
+
+        h = self.height() - 2
+        m = max(self.samples)
+        if m == 0:
+            return
+
+        scale = h / m
+
+        painter.setPen(QtGui.QColor(40, 190, 60))
+
+        for x, value in enumerate(self.samples):
+            value = h - value * scale
+            if value < 1 :
+                value = 1
+            painter.drawLine(x, h, x, value)  # Draw horizontal line
+
+        painter.setPen(QtGui.QColor(0, 0, 0))
+        painter.drawText(110, self.height() - 9, file_util.pretty_bytes(self.samples[-1]))
+
+        painter.end()
 
 
 class HarvestDialog(QtWidgets.QDialog):
@@ -77,20 +120,23 @@ class HarvestDialog(QtWidgets.QDialog):
         self.device_list.setHeaderHidden(True)
         self.device_list.setIndentation(0)
         self.device_list.setStyleSheet("background: #111; color: #fff; border-radius: 3px;")
-        self.device_list.setColumnCount(3)
+        self.device_list.setColumnCount(4)
         self.device_list.setColumnWidth(0, 200)
         self.device_list.setColumnWidth(1, 100)
         self.device_list.setColumnWidth(2, 200)
+        self.device_list.setColumnWidth(3, 100)
         for device in self.devices:
             pb = QtWidgets.QProgressBar()
             pb.setStyleSheet("text-align: center; margin-top: 2px; margin-bottom: 2px; height: 22px")
-            item = QtWidgets.QTreeWidgetItem([device.name, None, "--"])
+            ts = TimeSeriesWidget()
+            item = QtWidgets.QTreeWidgetItem([device.name, None, "--", None])
             brush = QtGui.QBrush(QtGui.QColor(30, 30, 30))
-            for i in range(3):
+            for i in range(4):
                 item.setBackground(i, brush)
             item.setCheckState(0, QtCore.Qt.Checked)
             self.device_list.addTopLevelItem(item)
             self.device_list.setItemWidget(item, 1, pb)
+            self.device_list.setItemWidget(item, 3, ts)
 
         self.splitter.addWidget(self.device_list)
         self.splitter.setSizes([1, 3])
@@ -244,13 +290,23 @@ class HarvestDialog(QtWidgets.QDialog):
 
         for worker in self.workers:
 
+            bandwidth = worker.calc_bandwidth()
+
             row = worker.device_id
             item = self.device_list.topLevelItem(row)
 
             val = worker.progress() * 100
             item.setText(1, f"{val:.2%}")
             file = worker.current_file()
-            item.setText(2, "" if file is None else str(file))
+            if file:
+                item.setText(2, str(file))
+            else:
+                item.setText(2, "")
+
+#            if bandwidth:
+#                item.setText(3, str(bandwidth))
+#            else:
+#                item.setText(3, "")
 
             brush = QtGui.QBrush()
             fg = QtGui.QColor(255, 255, 255)
@@ -260,14 +316,20 @@ class HarvestDialog(QtWidgets.QDialog):
             elif worker.status == DownloadThread.STATUS_FINISHED:
                 brush = QtGui.QBrush(QtGui.QColor(128, 128, 128))
 
+            # Progress Bar
             pb = self.device_list.itemWidget(item, 1)
             if pb:
                 pb.setValue(val)
                 pb.setMaximum(100)
 
+            # Time Series
+            ts = self.device_list.itemWidget(item, 3)
+            if ts:
+                ts.append(bandwidth)
+
             total += val
 
-            for i in range(3):
+            for i in range(4):
                 item.setBackground(i, brush)
                 item.setForeground(i, fg)
 

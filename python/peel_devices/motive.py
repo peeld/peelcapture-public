@@ -78,6 +78,10 @@ class MotiveDialog(BaseDeviceWidget):
         self.subjects.setChecked(self.settings.value("MotiveSubjects") == "True")
         self.form_layout.addRow("Subjects", self.subjects)
 
+        self.transport = QtWidgets.QCheckBox()
+        self.transport.setChecked(self.settings.value("MotiveTransport") == "True")
+        self.form_layout.addRow("Playback", self.transport)
+
         self.set_capture_folder = QtWidgets.QCheckBox()
         self.set_capture_folder.setChecked(self.settings.value("MotiveSetCaptureFolder") == "True")
         self.form_layout.addRow("Set Capture Folder", self.set_capture_folder)
@@ -100,6 +104,7 @@ class MotiveDialog(BaseDeviceWidget):
         self.multicast_address.setText(device.multicast_address)
         self.timecode.setChecked(device.timecode is True)
         self.subjects.setChecked(device.subjects is True)
+        self.transport.setChecked(device.transport is True)
         self.set_capture_folder.setChecked(device.set_capture_folder is True)
 
     def update_device(self, device, data=None):
@@ -118,6 +123,7 @@ class MotiveDialog(BaseDeviceWidget):
             data['multicast_address'] = self.multicast_address.text()
             data['timecode'] = self.timecode.isChecked()
             data['subjects'] = self.subjects.isChecked()
+            data['transport'] = self.transport.isChecked()
             data['set_capture_folder'] = self.set_capture_folder.isChecked()
         except ValueError:
             QtWidgets.QMessageBox.warning(self, "Error", "Invalid data")
@@ -139,6 +145,7 @@ class MotiveDialog(BaseDeviceWidget):
         self.settings.setValue("MotiveMulticastAddress", self.multicast_address.text())
         self.settings.setValue("MotiveTimecode", str(self.timecode.isChecked()))
         self.settings.setValue("MotiveSubjects", str(self.subjects.isChecked()))
+        self.settings.setValue("MotiveTransport", str(self.transport.isChecked()))
         self.settings.setValue("MotiveSetCaptureFolder", str(self.set_capture_folder.isChecked()))
 
         return True
@@ -158,10 +165,7 @@ class OptitrackMotive(PeelDeviceBase):
         self.multicast_address = "239.255.42.99"
         self.timecode = True
         self.subjects = True
-
-        self.plugin_id = cmd.createDevice("Motive")
-        if self.plugin_id == -1:
-            raise RuntimeError("Could not create motive device")
+        self.transport = True
 
     @staticmethod
     def device():
@@ -178,10 +182,16 @@ class OptitrackMotive(PeelDeviceBase):
             'multicast_address': self.multicast_address,
             'timecode': self.timecode,
             'subjects': self.subjects,
+            'transport': self.transport,
             'set_capture_folder': self.set_capture_folder,
         }
 
     def reconfigure(self, name, **kwargs):
+
+        if self.plugin_id == -1:
+            self.plugin_id = cmd.createDevice("Motive")
+            if self.plugin_id == -1:
+                raise RuntimeError("Could not create motive device")
 
         self.name = name
         self.connection_type = kwargs.get('connection_type')
@@ -192,6 +202,7 @@ class OptitrackMotive(PeelDeviceBase):
         self.multicast_address = kwargs.get('multicast_address')
         self.timecode = kwargs.get('timecode')
         self.subjects = kwargs.get('subjects')
+        self.transport = kwargs.get('transport')
         self.set_capture_folder = kwargs.get('set_capture_folder')
 
         cmd.writeLog(f"Connection Type: {self.connection_type}")
@@ -202,6 +213,7 @@ class OptitrackMotive(PeelDeviceBase):
         cmd.writeLog(f"Multicast Address: {self.multicast_address}")
         cmd.writeLog(f"Timecode: {self.timecode}")
         cmd.writeLog(f"Subjects: {self.subjects}")
+        cmd.writeLog(f"Transport: {self.transport}")
         cmd.writeLog(f"Set Capture Folder: {self.set_capture_folder}")
 
         config = ""
@@ -217,6 +229,7 @@ class OptitrackMotive(PeelDeviceBase):
             config += f"localAddress={self.local_address}\n"
             config += f"multicastAddress={self.multicast_address}\n"
             config += f"subjects={ int(self.subjects) }\n"
+            config += f"transport={ int(self.transport) }\n"
             config += f"timecode={ int(self.timecode) }\n"
 
             cmd.configureDevice(self.plugin_id, config)

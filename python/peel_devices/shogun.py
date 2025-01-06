@@ -159,10 +159,6 @@ class ViconShogun(PeelDeviceBase):
         self.timecode = None
         self.subjects = None
 
-        self.plugin_id = cmd.createDevice("Vicon")
-        if self.plugin_id == -1:
-            raise RuntimeError("Could not create vicon plugin device")
-
     @staticmethod
     def device():
         return "shogun"
@@ -176,6 +172,11 @@ class ViconShogun(PeelDeviceBase):
                 }
 
     def reconfigure(self, name, **kwargs):
+
+        if self.plugin_id == -1:
+            self.plugin_id = cmd.createDevice("Vicon")
+            if self.plugin_id == -1:
+                raise RuntimeError("Could not create vicon plugin device")
 
         cmd.writeLog("Shogun reconfigure\n")
         cmd.writeLog(str(kwargs))

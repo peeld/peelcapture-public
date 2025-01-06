@@ -23,3 +23,11 @@ def find_take(file, take_list):
         if take_compare(file, take):
             return take
     return None
+
+
+def pretty_bytes(size, decimal_places=2):
+    for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']:
+        if size < 1024.0 or unit == 'PiB':
+            break
+        size /= 1024.0
+    return f"{size:.{decimal_places}f} {unit}"

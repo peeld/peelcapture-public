@@ -275,7 +275,7 @@ class HyperDeckDownloadThread(DownloadThread):
 
                         if os.path.isfile(local_file):
                             # skip existing
-                            self.file_done.emit(this_file, self.COPY_SKIP, None)
+                            self.file_skip(this_file)
                         else:
                             # download
                             cmd.writeLog("Hyperdeck downloading: " + str(file))
