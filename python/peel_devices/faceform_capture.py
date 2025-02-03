@@ -212,18 +212,15 @@ class AddCaptureWidget(SimpleDeviceWidget):
 
 class CaptureDownloadThread(DownloadThread):
     def __init__(self, capture, directory, takes, all_files):
-        super(CaptureDownloadThread, self).__init__()
+        super(CaptureDownloadThread, self).__init__(all_files)
         self.capture = capture
         self.directory = directory
         self.takes = takes
-        self.current_file = None
-        self.files = []
-        self.all_files = all_files
 
     def __str__(self):
         return str(self.capture) + " Downloader"
 
-    def run(self):
+    def process(self):
         self.set_started()
         self.log("Downloading files from " + str(self.capture))
 
@@ -242,14 +239,12 @@ class CaptureDownloadThread(DownloadThread):
                 self.set_finished()
                 return
 
-        files_count = len(self.files)
         for file_index, file in enumerate(self.files):
-            self.set_current(file.remote_file)
-            progress = file_index / files_count
+            self.set_current(file_index)
             try:
+                this_file = str(self.capture) + ": " + file.local_file
                 if os.path.isfile(file.local_file) and not self.all_files:
-                    self.tick.emit(progress)
-                    self.file_skip(self.current_file)
+                    self.file_skip(this_file)
                     continue
 
                 local_dir = os.path.dirname(file.local_file)
@@ -261,11 +256,12 @@ class CaptureDownloadThread(DownloadThread):
                     for chunk in response.iter_content(chunk_size=1048576):
                         f.write(chunk)
 
-                self.tick.emit(progress)
-                self.file_ok(self.current_file)
+                self.file_ok(this_file)
 
             except Exception as e:
-                self.file_fail(self.current_file, str(e))
+                self.file_fail(this_file, str(e))
+        else:
+            self.set_current(len(self.files))
 
         self.set_finished()
 
