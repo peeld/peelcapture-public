@@ -23,9 +23,8 @@ if (PEELCAPTURE_PLUGIN_DIR)
 endif()
 
 if(TARGET PeelCapture)
-add_custom_command(
-    TARGET CapturyPlugin POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:CapturyPlugin> $<TARGET_FILE_DIR:PeelCapture>/plugins
-    COMMENT "Copying captury plugin to build dir"
-)
+	add_custom_command(
+		TARGET CapturyPlugin POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:CapturyPlugin> $<TARGET_FILE_DIR:PeelCapture>/plugins
+		COMMENT "Copying captury plugin to build dir")
 endif()

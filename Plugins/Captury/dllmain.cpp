@@ -98,7 +98,7 @@ public:
         if (strcmp(name, "record") == 0) {
             std::string sn = arg;
             res = Captury_setShotName(sn.c_str());
-            if (res != 0) {
+            if (res != 1) {
                 updateState("ONLINE", "");
                 return true;
             }

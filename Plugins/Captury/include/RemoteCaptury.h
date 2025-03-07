@@ -122,6 +122,7 @@ CAPTURY_DLL_EXPORT int Captury_getCameras(const CapturyCamera** cameras);
 #define CAPTURY_STREAM_ANGLES		0x0200
 #define CAPTURY_STREAM_SCALES		0x0400
 #define CAPTURY_STREAM_BLENDSHAPES	0x0800
+#define CAPTURY_STREAM_TCP		0x1000
 
 // returns 1 if successful, 0 otherwise
 CAPTURY_DLL_EXPORT int Captury_startStreaming(int what);
@@ -460,6 +461,7 @@ typedef enum { capturyActors = 1, capturyActor = 2,
 	       capturyDisableRemoteLogging = 77,
 	       capturyGetFramerate = 78,
 	       capturyFramerate = 79,
+	       CapturyBoneTypes = 80,
 	       capturyError = 0 } CapturyPacketTypes;
 
 // returns a string for nicer error messages
@@ -938,6 +940,15 @@ struct CapturyFrameratePacket {
 
 	int		numerator;
 	int		denominator;
+};
+
+// sent to client
+struct CapturyBoneTypePacket {
+	int32_t		type;	// capturyBoneTypes
+	int32_t		size;	// size of full message including type and size
+
+	int32_t		actorId;
+	uint8_t		boneTypes[];
 };
 
 #pragma pack(pop)
