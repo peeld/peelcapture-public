@@ -28,6 +28,7 @@ MotivePlugin::MotivePlugin()
 	: captureSubjects(false)
 	, captureTimecode(false)
 	, setCaptureFolder(false)
+	, transport(false)
 	, tcRate(0)
 	, lastFrameValue(0)
 	, error(ErrorCode_OK)
@@ -121,6 +122,9 @@ bool MotivePlugin::reconfigure(const char* value) {
 		}
 		if (name == "subjects") {
 			this->captureSubjects = value[0] == '1';
+		}
+		if (name == "transport") {
+			this->transport = value[0] == '1';
 		}
 		if (name == "timecode") {
 			this->captureTimecode = value[0] == '1';
@@ -315,7 +319,7 @@ bool MotivePlugin::command(const char* name, const char* arg)
 		}
 	}
 
-	if (strcmp(name, "play") == 0) {
+	if (transport && strcmp(name, "play") == 0) {
 		std::ostringstream oss;
 		oss << "SetPlaybackTakeName," << arg;
 		if (sendMotive(oss.str().c_str())) {

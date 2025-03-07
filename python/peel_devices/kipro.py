@@ -222,7 +222,7 @@ class KiProDownloadThread(DownloadThread):
 
                 while self.downloader.tick() and self.is_running():
                     self.current_size = self.downloader.read
-                    # self.calc_bandwidth(bytes + self.downloader.total)
+                    self.calc_bandwidth()
                     pass
 
                 # bytes += self.downloader.total

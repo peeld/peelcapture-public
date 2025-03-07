@@ -49,12 +49,6 @@ class MyDevice(PeelDeviceBase):
         self.info = ""
         self.host = "127.0.0.1"
         self.port = 2101
-        self.timecode = None
-        self.subjects = None
-
-        self.plugin_id = cmd.createDevice("Captury")
-        if self.plugin_id == -1:
-            raise RuntimeError("Could not create captury device")
 
     @staticmethod
     def device():
@@ -68,6 +62,13 @@ class MyDevice(PeelDeviceBase):
                 'timecode': self.timecode}
 
     def reconfigure(self, name, **kwargs):
+
+        if self.plugin_id == -1:
+            self.plugin_id = cmd.createDevice("Captury")
+            if self.plugin_id == -1:
+                raise RuntimeError("Could not create captury device")
+
+
         self.name = name
         if 'host' in kwargs:
             self.host = kwargs['host']

@@ -20,9 +20,6 @@ class AxisStudio(PeelDeviceBase):
         self.name = name
         self.host = "127.0.0.1"
         self.port = 0
-        self.plugin_id = cmd.createDevice("AxisStudio")
-        if self.plugin_id == -1:
-            raise RuntimeError("Could not create plugin device")
 
     @staticmethod
     def device():
@@ -34,6 +31,12 @@ class AxisStudio(PeelDeviceBase):
                 'port': self.port}
 
     def reconfigure(self, name, **kwargs):
+
+        if self.plugin_id == -1:
+            self.plugin_id = cmd.createDevice("AxisStudio")
+            if self.plugin_id == -1:
+                raise RuntimeError("Could not create plugin device")
+
         self.name = name
         self.host = kwargs['host']
         self.port = kwargs['port']

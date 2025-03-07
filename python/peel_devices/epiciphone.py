@@ -101,6 +101,7 @@ from PeelApp import cmd
 # https://docs.unrealengine.com/en-US/AnimatingObjects/SkeletalMeshAnimation/FacialRecordingiPhone/index.html
 
 
+
 class AddWidget(BaseDeviceWidget):
     def __init__(self, settings):
         super(AddWidget, self).__init__(settings)
@@ -194,7 +195,7 @@ class AddWidget(BaseDeviceWidget):
         self.settings.setValue("EpicPhoneListenIp", self.listen_ip.ip())
         self.settings.setValue("EpicPhoneListenPort", self.listen_port.text())
         self.settings.setValue("EpicPhoneMHA", self.mha.isChecked())
-        self.settings.setValue("EpicPhonePrexixName", self.prefix_name.isChecked())
+        self.settings.setValue("EpicPhonePrefixName", self.prefix_name.isChecked())
 
         return True
 
@@ -428,7 +429,7 @@ class EpicIPhone(PeelDeviceBase):
         return True
 
     def harvest(self, directory, all_files):
-        thread = IPhoneDownloadThread(self, directory)
+        thread = IPhoneDownloadThread(self, directory, self.listen_port)
         for take, (timecode, csv, mov) in self.takes.items():
             if not csv and not mov:
                 continue
@@ -518,7 +519,7 @@ class IPhoneDownloadThread(DownloadThread):
                 # Skip existing
                 full_path = os.path.join(self.directory, this_file.local_file)
                 if os.path.isfile(full_path):
-                    self.file_done.emit(this_name, self.COPY_SKIP, None)
+                    self.file_skip(this_name)
                     continue
 
                 # Tell the iphone we want it to send us a file
@@ -531,13 +532,12 @@ class IPhoneDownloadThread(DownloadThread):
                     conn, addr = self.socket.accept()
                 except socket.timeout:
                     self.log("No response for file: " + this_file.remote_file)
-                    print("No response for: " + this_file.remote_file)
-                    self.file_done.emit(this_name, DownloadThread.COPY_FAIL, "Timeout")
+                    self.file_fail(this_name, "Timeout")
                     conn = None
 
                 if conn is not None:
 
-                    conn.settimeout(2)
+                    conn.settimeout(1)
                     conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
 
                     # Get the file
@@ -545,7 +545,10 @@ class IPhoneDownloadThread(DownloadThread):
                     self.read(conn, this_file, local_fp)
 
                     if this_file.complete:
-                        self.file_done.emit(this_name, this_file.complete, this_file.error)
+                        if this_file.complete == self.COPY_OK:
+                            self.file_ok(this_name)
+                        if this_file.complete == self.COPY_FAIL:
+                            self.file_fail(this_name, this_file.error)
                     local_fp.close()
                     conn.close()
 
@@ -554,7 +557,6 @@ class IPhoneDownloadThread(DownloadThread):
 
             else:
                 self.set_current(len(self.files))
-
 
         except Exception as e:
             self.log(str(e))
@@ -565,37 +567,45 @@ class IPhoneDownloadThread(DownloadThread):
 
     def read(self, conn, this_file, fp):
 
+        buffer_size = 1024 * 1024
+
         # IOS device has connected, get the file
 
         this_file.complete = self.COPY_FAIL
 
-        size_header = conn.recv(4)
-        if size_header is None:
-            this_file.error = "Read Error"
-            return
+        try:
+            size_header = conn.recv(4)
+            if size_header is None:
+                this_file.error = "Read Error"
+                return
 
-        this_file.file_size = struct.unpack(">i", size_header)[0]
-        this_file.data_size = 0
-        self.file_size = this_file.file_size
+            this_file.file_size = struct.unpack(">i", size_header)[0]
+            this_file.data_size = 0
+            self.file_size = this_file.file_size
 
-        if this_file.file_size == 0:
-            this_file.error = "Zero sized file"
-            return
+            if this_file.file_size == 0:
+                this_file.error = "Zero sized file"
+                return
 
-        while self.is_running():
-            data = conn.recv(65536)
-            if data is None or len(data) == 0:
-                break
+            while self.is_running():
+                data = conn.recv(buffer_size)
+                if not data:
+                    break
 
-            fp.write(data)
-            this_file.data_size += len(data)
-            self.current_size = this_file.data_size
+                fp.write(data)
+                this_file.data_size += len(data)
+                self.current_size = this_file.data_size
+                self.add_bytes(len(data))
 
-        if this_file.data_size != this_file.file_size:
-            this_file.error = "Incomplete data"
-        else:
-            this_file.complete = self.COPY_OK
+            if this_file.data_size != this_file.file_size:
+                this_file.error = "Incomplete data"
+            else:
+                this_file.complete = self.COPY_OK
 
+        except Exception as e:
+            this_file.error = f"Read Error: {str(e)}"
+        finally:
+            conn.close()  # Ensure connection is closed
 
 
 

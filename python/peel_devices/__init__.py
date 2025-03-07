@@ -383,7 +383,10 @@ class PeelDeviceBase(QtCore.QObject):
 
         device = PeelApp.cmd.newDevice()  # CPP class from parent app
         device.deviceId = self.device_id
-        device.pluginId = self.plugin_id
+        if self.plugin_id == -1:
+            device.pluginId = -1
+        else:
+            device.pluginId = self.plugin_id
         device.name = self.name
         device.status = state
         device.info = info
@@ -675,41 +678,46 @@ class DownloadThread(QtCore.QObject):
         self.file_size = 0
         self.current_size = 0
         self.device_id = None
+        self.okay_count = 0
 
     def add_bytes(self, value):
+        if self.last_bytes is None or self.last_time is None:
+            self.last_bytes = 0
+            self.last_time = time.time()
         self.bytes += value
-        self.calc_bandwidth(self.bytes)
 
-    def calc_bandwidth(self, new_bytes):
-        t = time.time()
-        if self.last_time is None:
-            self.last_time = t
-            self.last_bytes = new_bytes
-            self.bandwidth = 0
-            return
+    def calc_bandwidth(self):
+        print(f"Getting bandwidth {self.last_bytes} {self.last_time}")
+        if self.last_bytes is None or self.last_time is None:
+            self.last_bytes = self.bytes
+            self.last_time = time.time()
+            return 0
 
-        tdiff = t - self.last_time
-        if tdiff < 1.0:
-            return
-
-        self.bandwidth = (new_bytes - self.last_bytes) / tdiff
-        print(self.bandwidth)
+        bytes_diff = self.bytes - self.last_bytes
+        time_diff = time.time() - self.last_time
+        self.bandwidth = bytes_diff / time_diff
+        self.last_bytes = self.bytes
+        self.last_time = time.time()
+        return self.bandwidth
 
     def progress(self):
 
-        if self.current_index is None:
+        if self.okay_count == 0:
             return 0
+
         if not self.files:
             print(str(self) + " no files")
             return 1
 
-        p = self.current_index / len(self.files)
+        p = self.okay_count / len(self.files)
 
+        # no current file to add a fractional part
         if self.file_size == 0:
             return p
 
+        # get the fractional unit size
         fraction = 1 / len(self.files)
-        # print(p, fraction, self.current_size, self.file_size)
+
         return p + fraction * (self.current_size / self.file_size)
 
     def process(self):
@@ -744,12 +752,14 @@ class DownloadThread(QtCore.QObject):
         self.current_index = index
 
     def file_ok(self, name):
+        self.okay_count += 1
         self.file_done.emit(name, self.COPY_OK, None)
 
     def file_fail(self, name, err):
         self.file_done.emit(name, self.COPY_FAIL, err)
         
     def file_skip(self, name):
+        self.okay_count += 1
         self.file_done.emit(name, self.COPY_SKIP, None)
 
     def is_running(self):
