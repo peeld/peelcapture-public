@@ -122,6 +122,7 @@ CAPTURY_DLL_EXPORT int Captury_getCameras(const CapturyCamera** cameras);
 #define CAPTURY_STREAM_ANGLES		0x0200
 #define CAPTURY_STREAM_SCALES		0x0400
 #define CAPTURY_STREAM_BLENDSHAPES	0x0800
+#define CAPTURY_STREAM_TCP		0x1000
 
 // returns 1 if successful, 0 otherwise
 CAPTURY_DLL_EXPORT int Captury_startStreaming(int what);
@@ -192,7 +193,7 @@ typedef void (*CapturyARTagCallback)(int num, CapturyARTag*, void* userArg);
 // register callback that will be called when an artag is detected
 // pass NULL if you want to deregister the callback
 // returns 1 if successful otherwise 0
-CAPTURY_DLL_EXPORT int Captury_registerARTagCallback(CapturyARTagCallback callback);
+CAPTURY_DLL_EXPORT int Captury_registerARTagCallback(CapturyARTagCallback callback, void* userArg);
 
 // returns an array of artags followed by one where the id is -1
 // Captury_freeARTags() after use
@@ -206,7 +207,7 @@ typedef void (*CapturyImageCallback)(const CapturyImage* img, void* userArg);
 // register callback that will be called when a new frame was streamed from this particular camera
 // pass NULL to deregister
 // returns 1 if successfull otherwise 0
-CAPTURY_DLL_EXPORT int Captury_registerImageStreamingCallback(CapturyImageCallback callback);
+CAPTURY_DLL_EXPORT int Captury_registerImageStreamingCallback(CapturyImageCallback callback, void* userArg);
 
 // may return NULL if no image has been received yet
 // use Captury_freeImage to free after use
@@ -460,6 +461,7 @@ typedef enum { capturyActors = 1, capturyActor = 2,
 	       capturyDisableRemoteLogging = 77,
 	       capturyGetFramerate = 78,
 	       capturyFramerate = 79,
+	       CapturyBoneTypes = 80,
 	       capturyError = 0 } CapturyPacketTypes;
 
 // returns a string for nicer error messages
@@ -938,6 +940,15 @@ struct CapturyFrameratePacket {
 
 	int		numerator;
 	int		denominator;
+};
+
+// sent to client
+struct CapturyBoneTypePacket {
+	int32_t		type;	// capturyBoneTypes
+	int32_t		size;	// size of full message including type and size
+
+	int32_t		actorId;
+	uint8_t		boneTypes[];
 };
 
 #pragma pack(pop)
