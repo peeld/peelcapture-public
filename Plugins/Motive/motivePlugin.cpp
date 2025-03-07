@@ -175,7 +175,7 @@ bool MotivePlugin::connect()
 		return false;
 	}
 
-	if (this->captureSubjects) {
+	if (this->captureSubjects || this->captureTimecode) {
 		client.SetFrameReceivedCallback(frameCallback, this);
 	}
 

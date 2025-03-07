@@ -180,19 +180,20 @@ class KiProDownloadThread(DownloadThread):
         self.message.emit("KI PRO THREAD DONE")
 
     def prepare_clips(self):
-        take_list = [format_take_name(i) for i in cmd.takes()]
+        take_list = cmd.takes()
         self.files = []
 
         for clip in self.kipro.clips():
             if self.all_files or self.is_clip_in_takes(clip['clipname'], take_list):
                 self.files.append(FileItem(clip['clipname'], clip['clipname']))
 
-    def is_clip_in_takes(self, clipname, take_list):
-        name = format_take_name(clipname)
+    def is_clip_in_takes(self, name, take_list):
+        name_fixed = format_take_name(name)
         for take in take_list:
+            take_fixed = format_take_name(take)
             if self.kipro.prefix_device_name:
-                take = f"{self.kipro.name}-{take}"
-            if name.startswith(take):
+                take_fixed = f"{self.kipro.name}-{take_fixed}"
+            if name_fixed.startswith(take_fixed):
                 return True
         return False
 

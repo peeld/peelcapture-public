@@ -25,12 +25,13 @@
 
 from peel_devices import PeelDeviceBase, BaseDeviceWidget
 from PySide6 import QtWidgets, QtCore
-# from PeelApp import cmd
+from PeelApp import cmd
 
+import os
+import os.path
 import asyncio
 import simpleobsws
-#import logging, sys
-import json
+
 
 class ObsDeviceDialog(BaseDeviceWidget):
     """ A basic dialog for a device that has a name and an optional IP argument """
@@ -41,24 +42,17 @@ class ObsDeviceDialog(BaseDeviceWidget):
         link = 'https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-obs/'
         msg = "<P>Use OBS version 28.x or above</P>"
         msg += "<P>Not compatible with older versions of obs with the websocket 4.x plugin</P>"
+        msg += "<P>Valid fields for take name and directory:</P>"
+        msg += "<P>&nbsp;-&nbsp;{takeName}, {shotName}, {shotTag}, {takeNumber}, {takeId}, {dataDirectory}, {deviceName}"
         msg += '<P><A HREF="' + link + '">Documentation</A></P>'
         self.set_info(msg)
 
         self.setWindowTitle("Obs")
         self.setObjectName("ObsDialog")
 
-        self.info = QtWidgets.QLabel()
-        form_layout.addWidget(self.info)
-
         self.name = QtWidgets.QLineEdit()
         self.name.setText(settings.value("ObsName", "Obs"))
         form_layout.addRow("Name", self.name)
-
-        self.host = None
-        self.port = None
-        self.broadcast = None
-        self.listen_ip = None
-        self.listen_port = None
 
         self.host = QtWidgets.QLineEdit()
         self.host.setText(settings.value("ObsHost", "127.0.0.1"))
@@ -73,11 +67,31 @@ class ObsDeviceDialog(BaseDeviceWidget):
         self.password.setText(settings.value("ObsPassword", ""))
         form_layout.addRow("Password", self.password)
 
+        self.take_format = QtWidgets.QLineEdit()
+        self.take_format.setText(settings.value("ObsTakeFormat", ""))
+        form_layout.addRow("Take Name Format", self.take_format)
+
+        self.directory_name = QtWidgets.QLineEdit()
+        self.directory_name.setText(settings.value("ObsDirectoryName", ""))
+        form_layout.addRow("Directory Name", self.directory_name)
+
         self.set_folder = QtWidgets.QCheckBox("")
         self.set_folder.setChecked(settings.value("ObsSetFolder") == "True")
         form_layout.addRow("Set Capture Folder", self.set_folder)
+        self.directory_name.setEnabled(self.set_folder.isChecked())
+        self.directory_name.setStyleSheet("QLineEdit:disabled { background-color: #444;} ")
+
+        self.set_folder.stateChanged.connect(self.set_folder_state)
+
+        self.info = QtWidgets.QLabel()
+        form_layout.addWidget(self.info)
 
         self.setLayout(form_layout)
+
+    def set_folder_state(self, _):
+        self.directory_name.setEnabled(self.set_folder.isChecked())
+
+
 
     def populate_from_device(self, device):
         # populate the gui using data in the device
@@ -85,7 +99,9 @@ class ObsDeviceDialog(BaseDeviceWidget):
         self.host.setText(device.host)
         self.port.setText(str(device.port))
         self.password.setText(device.password)
-        self.set_folder.setChecked(device.set_folder == True)
+        self.take_format.setText(device.take_format)
+        self.directory_name.setText(device.directory_name)
+        self.set_folder.setChecked(device.set_folder is True)
 
     def update_device(self, device):
 
@@ -97,13 +113,17 @@ class ObsDeviceDialog(BaseDeviceWidget):
             QtWidgets.QMessageBox.warning(self, "Error", "Invalid port")
             return False
 
-        name = self.name.text()
-        host = self.host.text()
-        set_folder = self.set_folder.isChecked()
-        password = self.password.text()
+        args = {
+            'name': self.name.text(),
+            'host': self.host.text(),
+            'port': port,
+            'set_folder': self.set_folder.isChecked(),
+            'password': self.password.text(),
+            'directory_name': self.directory_name.text(),
+            'take_format': self.take_format.text()
+        }
 
-        device.reconfigure(name, host=host, port=port, password=password, set_folder=set_folder)
-        return True
+        return device.reconfigure(**args)
 
     def do_add(self):
         if not super().do_add():
@@ -114,6 +134,8 @@ class ObsDeviceDialog(BaseDeviceWidget):
         self.settings.setValue("ObsPort", self.port.text())
         self.settings.setValue("ObsPassword", self.password.text())
         self.settings.setValue("ObsSetFolder", str(self.set_folder.isChecked()))
+        self.settings.setValue("ObsDirectoryName", self.directory_name.text())
+        self.settings.setValue("ObsTakeFormat", self.take_format.text())
 
         return True
 
@@ -129,7 +151,10 @@ class ObsDevice(PeelDeviceBase):
         self.info = ""
         self.state = "OFFLINE"
         self.last_command = None
-        self.set_folder = None
+        self.set_folder = False
+        self.directory_name = ""
+        self.fields = {}
+        self.take_format = "{takeName}"
 
     def reconfigure(self, name, **kwargs):
         self.name = name
@@ -137,6 +162,8 @@ class ObsDevice(PeelDeviceBase):
         self.port = kwargs['port']
         self.password = kwargs['password']
         self.set_folder = kwargs['set_folder']
+        self.directory_name = kwargs.get('directory_name', '')
+        self.take_format = kwargs.get('take_format', "{takeName}")
         self.state = "OFFLINE"
         return True
 
@@ -202,7 +229,10 @@ class ObsDevice(PeelDeviceBase):
             'host': self.host,
             'port': self.port,
             'password': self.password,
-            'set_folder': self.set_folder}
+            'set_folder': self.set_folder,
+            'directory_name': self.directory_name,
+            'take_format': self.take_format
+        }
 
     def __str__(self):
         return self.name
@@ -272,20 +302,56 @@ class ObsDevice(PeelDeviceBase):
         self.conn.loop.run_until_complete(self.cmd_sender(cmd, data))
 
     def command(self, command, argument):
+
+        print(f" -- {command} {argument}")
+
+        if command in ["takeName", "shotName", "shotTag", "takeNumber", "takeId"]:
+            self.fields[command] = argument
+            return
+
         # https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md
         self.last_command = command
         if command == "record":
-            if self.set_folder:
-                data = {'parameterCategory': 'SimpleOutput', 'parameterName': 'FilePath',
-                        'parameterValue': self.data_directory()}
+
+            if self.set_folder and self.directory_name:
+
+                data_directory = self.directory_name
+
+                self.fields["dataDirectory"] = cmd.getDataDirectory()
+                self.fields["deviceName"] = self.name
+
+                for k, value in self.fields.items():
+                    key = '{' + k + '}'
+                    data_directory = data_directory.replace(key, value)
+
+                if not os.path.isdir(data_directory):
+                    os.makedirs(data_directory)
+
+                data = {'parameterCategory': 'SimpleOutput',
+                        'parameterName': 'FilePath',
+                        'parameterValue': data_directory}
                 self.send("SetProfileParameter", data)
 
-            data = {'parameterCategory': 'Output', 'parameterName': 'FilenameFormatting', 'parameterValue': argument }
+            take_name = self.take_format
+            for k, value in self.fields.items():
+                key = '{' + k + '}'
+                take_name = take_name.replace(key, value)
+
+            if not take_name:
+                take_name = argument
+
+            data = {
+                'parameterCategory': 'Output',
+                'parameterName': 'FilenameFormatting',
+                'parameterValue': take_name
+            }
             self.send("SetProfileParameter", data)
             self.send("StartRecord")
+            return
 
         if command == "stop":
             self.send("StopRecord")
+            return
 
     @staticmethod
     def dialog_class():

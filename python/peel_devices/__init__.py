@@ -330,23 +330,27 @@ class PeelDeviceBase(QtCore.QObject):
         """
         Command, Argument may be:
 
-        - record *takename*
-        - play *takename* or "" for last recorded
+        Device Startup
+        - set_data_directory
+
+        Start Recording:
+        - takeName
+        - shotName
+        - shotTag
+        - takeNumber
+        - description
+        - takeId
+        - record
+
+        Record / Play Stop:
         - stop
-        - transport *stop | next | prev*
-        - notes *note* - sent when the notes are changed, relevant for the last take
-        - timecode *timecode* - called when recording starts
-        - selectedTake *take* - sent when a user selects a take, passes the take name
 
-        The following are called when take information needs to be updated, ie the take name has changed or when
-        recording starts:
+        User Action:
+        - selectTake
+        - notes
 
-        - takeName *n*
-        - shotName *name*
-        - shotTag *tag*
-        - takeNumber *n*
-        - description *description*
-        - takeId *id*
+        Playing
+        - play
 
         """
         raise NotImplementedError
