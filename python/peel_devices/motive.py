@@ -157,7 +157,7 @@ class OptitrackMotive(PeelDeviceBase):
         super(OptitrackMotive, self).__init__(name)
 
         self.set_capture_folder = None
-        self.connection_type = "Muilticast"
+        self.connection_type = "Multicast"
         self.command_port = 1510
         self.data_port = 1511
         self.server_address = "127.0.0.1"
