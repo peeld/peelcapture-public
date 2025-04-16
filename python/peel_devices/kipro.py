@@ -30,6 +30,7 @@ import os.path
 from peel_devices import PeelDeviceBase, SimpleDeviceWidget, DownloadThread, FileItem
 import json
 import re
+import traceback
 
 # http://192.168.15.151/descriptors
 
@@ -169,7 +170,9 @@ class KiProDownloadThread(DownloadThread):
             self.prepare_clips()
             self.download_clips()
         except Exception as e:
-            print(str(e))
+            cmd.writeLog(f"{self} - Ki pro process error: {e}\n")
+            print("Ki pro process error: " + str(e))
+            print(traceback.format_exc())
 
         self.message.emit("ki pro finishing")
         self.set_finished()
@@ -184,8 +187,10 @@ class KiProDownloadThread(DownloadThread):
         self.files = []
 
         for clip in self.kipro.clips():
-            if self.all_files or self.is_clip_in_takes(clip['clipname'], take_list):
-                self.files.append(FileItem(clip['clipname'], clip['clipname']))
+            name = clip['clipname']
+            if self.all_files or self.is_clip_in_takes(name, take_list):
+                print(name)
+                self.files.append(FileItem(name, name))
 
     def is_clip_in_takes(self, name, take_list):
         name_fixed = format_take_name(name)
@@ -202,6 +207,8 @@ class KiProDownloadThread(DownloadThread):
         # bytes = 0
 
         for i, clip in enumerate(self.files):
+
+            print(i, clip)
 
             self.set_current(i)
             if not self.is_running():
@@ -232,7 +239,7 @@ class KiProDownloadThread(DownloadThread):
                     self.handle_incomplete_download(out)
                 else:
                     self.current_file().complete = True
-                    self.file_ok(str(self.kipro) + ":" + self.current_file().local_file)
+                    self.file_ok(str(self.kipro.name) + ":" + self.current_file().local_file)
 
                 # Ki pro crashes without this
                 time.sleep(1.0)
@@ -515,40 +522,44 @@ class KiPro(PeelDeviceBase):
     def clips(self):
         if self.downloading:
             return
+
+        # Fetch the clip list from the Ki Pro device
         try:
-            f = urllib.request.urlopen("http://" + self.host + "/clips", timeout=1)
-            s = f.read().decode("ascii")
-        except IOError as e:
-            print(e)
+            url = f"http://{self.host}/clips"
+            response = urllib.request.urlopen(url, timeout=1)
+            response_text = response.read().decode("ascii")
+        except IOError as error:
+            print("Ki pro clips error: " + str(error))
             return
 
-        for clip in re.findall(r"\{[^\)]+?\}", s):
-
-            ret = re.match("{(.*)}", clip)
-            if not ret:
+        # Extract JSON-like clip data from the response
+        for clip_data in re.findall(r"\{[^\)]+?\}", response_text):
+            match = re.match(r"\{(.*)\}", clip_data)
+            if not match:
                 continue
 
-            clip = ret.group(1).strip()
+            clip_content = match.group(1).strip()
+            clip_dict = {}
 
-            d = {}
+            # Parse key-value pairs from the clip data
+            for entry in re.findall(r'.*?: "[^"]*",\s+', clip_content + ","):
+                key_value_split = entry.find(':')
+                key = entry[:key_value_split].strip()
+                value = entry[key_value_split + 1:].strip()[1:-2]  # Remove surrounding quotes
 
-            for i in re.findall(r'.*?: "[^"]*",\s+', clip + ","):
-                p = i.find(':')
-                k = i[:p].strip()
-                v = i[p + 1:].strip()[1:-2]
-                if k and v:
-                    d[k] = v
+                if key and value:
+                    clip_dict[key] = value
 
-            yield d
+            yield clip_dict
 
     def play_clip(self, name):
 
         names = [i['clipname'] for i in self.clips()]
 
-        clip_name = format_take_name(name).lower()
+        clip_name = format_take_name(name)
         found = []
-        for i, info in enumerate(self.clips()):
-            if format_take_name(info["clipname"]).lower().startswith(clip_name):
+        for i, each_clip in enumerate(names):
+            if format_take_name(each_clip).startswith(clip_name):
                 found.append(i)
 
         if not found:

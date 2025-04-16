@@ -136,7 +136,7 @@ bool MotivePlugin::reconfigure(const char* value) {
 
 	if (this->params.serverAddress == 0 || this->params.serverAddress[0] == 0) {
 		logMessage("Motive server address was empty, not connecting.");
-		updateState("Error", "No server address");
+		updateState("ERROR", "No server address");
 		return false;
 	}
 
@@ -291,6 +291,10 @@ bool MotivePlugin::command(const char* name, const char* arg)
 {
 	if (!getState()) {
 		return false;
+	}
+
+	if (!this->getEnabled()) {
+		return true;
 	}
 
 	if (strcmp(name, "record") == 0) {

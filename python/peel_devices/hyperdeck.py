@@ -214,7 +214,9 @@ class HyperDeckDownloadThread(DownloadThread):
             cmd.writeLog("Skipping non file: " + line)
             return
 
-        self.files.append(ret.group(1))
+        file = ret.group(1)
+        cmd.writeLog("FILE: " + file)
+        self.files.append(file)
 
     def process(self):
 
@@ -231,6 +233,9 @@ class HyperDeckDownloadThread(DownloadThread):
                 ftp.login()
                 ftp.cwd('/')
 
+                self.slots = []
+                self.files = []
+
                 ftp.retrlines('LIST', self.add_slot)
 
                 for slot in self.slots:
@@ -242,6 +247,9 @@ class HyperDeckDownloadThread(DownloadThread):
                         break
 
                     ftp.cwd('/' + slot)
+
+                    # Clear files out for each slot
+                    self.files = []
 
                     ftp.retrlines('LIST', self.add_file)
 
@@ -283,7 +291,7 @@ class HyperDeckDownloadThread(DownloadThread):
                                 self.file_size = ftp.size(file)
                                 self.fp = open(local_file, 'wb')
                                 if not self.fp:
-                                    self.file_fail(this_file, str(e))
+                                    self.file_fail(this_file, "Could not open file for writing")
                                 else:
                                     ftp.retrbinary('RETR ' + file, self.write)
                                     self.file_ok(this_file)

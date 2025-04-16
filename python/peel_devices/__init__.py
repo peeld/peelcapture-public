@@ -691,7 +691,7 @@ class DownloadThread(QtCore.QObject):
         self.bytes += value
 
     def calc_bandwidth(self):
-        print(f"Getting bandwidth {self.last_bytes} {self.last_time}")
+        # print(f"Getting bandwidth {self.last_bytes} {self.last_time}")
         if self.last_bytes is None or self.last_time is None:
             self.last_bytes = self.bytes
             self.last_time = time.time()
@@ -699,7 +699,10 @@ class DownloadThread(QtCore.QObject):
 
         bytes_diff = self.bytes - self.last_bytes
         time_diff = time.time() - self.last_time
-        self.bandwidth = bytes_diff / time_diff
+        if time_diff != 0:
+            self.bandwidth = bytes_diff / time_diff
+        else:
+            self.bandwidth = 0
         self.last_bytes = self.bytes
         self.last_time = time.time()
         return self.bandwidth

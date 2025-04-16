@@ -54,8 +54,11 @@ class PEEL_PLUGIN_API PeelCapDeviceInterface {
 public:
     PeelCapDeviceInterface() 
         : cb({ nullptr, nullptr, nullptr }) 
-        , states(new State())        
-    {};
+        , states(new State)        
+    {
+    	states->enabled = true;
+    };
+
     virtual ~PeelCapDeviceInterface() {
         delete states;
     };
