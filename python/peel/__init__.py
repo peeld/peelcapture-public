@@ -187,7 +187,9 @@ class AddDeviceDialog(QtWidgets.QDialog):
 
         # Create an instance of the device, so we can get the default values
         device = self.current_device_class()
-        self.current_widget.populate_from_device(device)
+
+        # Don't populate from device, or it will not use the saved settings.
+        # self.current_widget.populate_from_device(device)
 
         # Add the widget it to the ui
         self.device_widget.layout().addWidget(self.current_widget)

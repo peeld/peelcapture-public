@@ -28,7 +28,7 @@ import socket
 import select
 import time
 from PeelApp import cmd
-
+from queue import Queue
 
 def receive_message(client_socket):
     try:
@@ -48,16 +48,21 @@ class SocketThread(QtCore.QThread):
         super(SocketThread, self).__init__()
         self.host = host
         self.port = port
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket = None
         self.running = True
         self.connected = False
         self.messages = []
+        self.send_queue = Queue()
 
     def close_socket(self):
+
+        if not self.connected:
+            return
+
+        self.connected = False
+
         try:
-            if self.connected:
-                self.socket.shutdown(socket.SHUT_RDWR)
-                self.connected = False
+            self.socket.shutdown(socket.SHUT_RDWR)
         except OSError as e:
             print(e)
 
@@ -65,6 +70,8 @@ class SocketThread(QtCore.QThread):
             self.socket.close()
         except OSError as e:
             print(e)
+
+        self.socket = None
 
     def run(self):
 
@@ -76,6 +83,7 @@ class SocketThread(QtCore.QThread):
 
             if not self.connected:
                 try:
+                    self.close_socket()
                     self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     self.socket.connect((self.host, self.port))
                 except IOError as e:
@@ -85,12 +93,25 @@ class SocketThread(QtCore.QThread):
 
                 self.connected = True
                 self.state_change.emit("ONLINE")
+                cmd.writeLog(f"MOBU: Connected.")
 
             while self.running and self.connected:
 
+                while not self.send_queue.empty():
+                    try:
+                        msg = self.send_queue.get_nowait()
+                        cmd.writeLog(f"MOBU: message: {msg}")
+                        self.socket.sendall(msg.encode("utf-8"))
+                    except Exception as e:
+                        cmd.writeLog(f"MOBU: Send failed: {e}")
+                        self.connected = False
+                        self.close_socket()
+                        self.state_change.emit("OFFLINE")
+                        break
+
                 try:
 
-                    read_list, _, err_list = select.select([self.socket], [], [self.socket], 2)
+                    read_list, _, err_list = select.select([self.socket], [], [self.socket], 0.3)
 
                     if self.socket in err_list:
                         cmd.writeLog("MOBU: Socket error - closing connection")
@@ -133,7 +154,7 @@ class SocketThread(QtCore.QThread):
                     line = message[:pos]
                     message = message[pos+1:]
 
-                    cmd.writeLog("MOBU MESSAGE: " + message.decode('utf-8'))
+                    cmd.writeLog("MOBU MESSAGE: " + line.decode('utf-8', errors='replace'))
 
                     if line == b'RECORDING':
                         self.state_change.emit("RECORDING")
@@ -147,13 +168,11 @@ class SocketThread(QtCore.QThread):
         cmd.writeLog("MOBU: Thread finished")
 
     def send(self, msg):
-        msg += "\n"
-        if self.connected:
-            self.socket.send(msg.encode("utf8"))
+        self.send_queue.put(msg + "\n")
 
     def teardown(self):
-        self.close_socket()
         self.running = False
+        self.close_socket()
         self.wait(3000)
 
 
@@ -164,7 +183,8 @@ class MobuDeviceWidget(SimpleDeviceWidget):
         link = 'https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-motionbuilder/'
         msg = '<P><A HREF="' + link + '">Documentation</A></P>'
         msg += "<P>Connects to Peel Capture Motion Builder Device</P>"
-        msg += "<P>Requires the Peel Capture device to be installed in motion builder</P>"
+        msg += "<P>Requires the Peel Capture device to be installed in motion builder."
+        msg += "The mobu plugin can be found in the 'integrations' folder of the PeelCapture install</P>"
         msg += "<P>Records a new take and sets the take name</P>"
 
         if self.port.text() == "":
@@ -181,7 +201,8 @@ class MotionBuilderDevice(PeelDeviceBase):
         self.socket_thread = None
         self.current_state = None
         self.host = "127.0.0.1"
-        self.port = 8888
+        self.port = 8833
+        cmd.writeLog("MOBU device.")
 
     @staticmethod
     def device():
@@ -201,14 +222,17 @@ class MotionBuilderDevice(PeelDeviceBase):
         self.name = name
         self.host = kwargs.get('host')
         self.port = kwargs.get('port')
+        cmd.writeLog(f"MOBU: {self.host}:{self.port}")
         return True
 
     def connect_device(self):
         self.teardown()
         self.socket_thread = SocketThread(self.host, self.port)
+        cmd.writeLog(f"MOBU Starting")
         self.socket_thread.start()
         self.socket_thread.state_change.connect(self.do_state)
         self.update_state("OFFLINE", "")
+
 
     def command(self, command, arg):
 

@@ -11,16 +11,21 @@
 #include <sstream>
 
 
+std::vector<MotivePlugin*> MotivePlugin::instances;
+std::mutex MotivePlugin::instances_mutex;
+
+
 void frameCallback(sFrameOfMocapData* pFrameOfData, void* pUserData)
 {
 	MotivePlugin* ref = (MotivePlugin*)pUserData;
 	ref->inFrame(pFrameOfData);
 }
 
-void messageCallback(Verbosity level, const char* message)
-{
-	//if (!gMotive) { return; }
-//gMotive->messageCallback(level, message);
+void MotivePlugin::messageCallback(Verbosity msgType, const char* msg) {
+	std::lock_guard<std::mutex> lock(instances_mutex);
+	for (MotivePlugin* handler : instances) {
+		handler->onMessage(msgType, msg);
+	}
 }
 
 
@@ -36,10 +41,16 @@ MotivePlugin::MotivePlugin()
 	, playing(false)
 	, connected(false)
 {
-	NatNet_SetLogCallback(::messageCallback);
+
+	std::lock_guard<std::mutex> lock(instances_mutex);
+	instances.push_back(this);
+
+	NatNet_SetLogCallback(MotivePlugin::messageCallback);
 };
 
 MotivePlugin::~MotivePlugin() {
+	std::lock_guard<std::mutex> lock(instances_mutex);
+	instances.erase(std::remove(instances.begin(), instances.end(), this), instances.end());
 	client.Disconnect();
 }
 
@@ -333,7 +344,6 @@ bool MotivePlugin::command(const char* name, const char* arg)
 				playing = true;
 			}
 		}
-
 	}
 
 	return true;
@@ -516,6 +526,13 @@ void MotivePlugin::inFrame(sFrameOfMocapData* frame)
 			logMessage(oss.str().c_str());
 		}
 	}
+}
+
+void MotivePlugin::onMessage(Verbosity msgType, const char* msg)
+{
+	std::ostringstream oss;
+	oss << "Motive: " << msg;
+	logMessage(oss.str().c_str());
 }
 
 

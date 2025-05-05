@@ -4,6 +4,7 @@
 #include <chrono>
 #include <thread>
 #include <memory>
+#include <mutex>
 #include <functional>
 
 #include "NatNetClient.h"
@@ -30,6 +31,10 @@ public:
     const char* pluginCommand(const char*) override;
 
 	void inFrame(sFrameOfMocapData*);
+
+	static void messageCallback(Verbosity msgType, const char* msg);
+
+	void onMessage(Verbosity msgType, const char* msg);
 
 private:
 
@@ -81,12 +86,14 @@ private:
 
 	bool connected;
 
-private:
 	std::string message;
 
 	std::string value_serverAddress;
 	std::string value_localAddress;
 	std::string value_multicastAddress;
+
+	static std::vector<MotivePlugin*> instances;
+	static std::mutex instances_mutex;
 
 };
 

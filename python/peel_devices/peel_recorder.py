@@ -33,6 +33,8 @@ import socket
 import select
 import struct
 
+MAGIC_NUMBER = 0x45020003
+
 
 class SocketThread(QtCore.QThread):
 
@@ -151,64 +153,107 @@ class SocketThread(QtCore.QThread):
 
             count = 0
 
-            try:
-                header = self.socket.recv(8)
-                if not header:
-                    print("Connection Closed")
-                    self.tcp_disconnect()
-                    continue
-            except IOError as e:
-                print("Error reading from socket: " + str(e))
+            header = self.recv_all(24)
+
+            if header is None:
+                print("No header data")
                 self.tcp_disconnect()
                 continue
 
-            # two bytes 0x4501, two bytes code, 4 bytes size of blob
-            header_value = struct.unpack('<HHI', header)
+            # four bytes magic
+            # four bytes code
+            # four bytes checksum
+            # four bytes size of blob
+            # eight bytes timestamp
 
-            if header_value[0] != 0x4501:
+            header_value = struct.unpack('<IIIIQ', header)
+
+            if header_value[0] != MAGIC_NUMBER:
                 print("Bad header: " + str(header_value[0]))
                 self.tcp_disconnect()
                 continue
+
+            code = header_value[1]
+            sz   = header_value[3]
 
             if not self.active_flag:
                 self.active_flag = True
                 print("Connection is valid.")
                 self.state_change.emit()
 
-            if header_value[1] == 0x0003:
+            blob = None
+            if sz != 0:
+                blob = self.socket.recv(sz)
+
+            if code == 1:
                 # heartbeat request, send a confirmation
-                self.send(0x0004)
+                self.send(2)
                 continue
 
-            print('DATA: ' + hex(header_value[1]) + ' ' + hex(header_value[2]))
+            if code == 11:
+                # command
+                continue
 
-            if header_value[1] == 0x4001:
+            if code == 12:
+                # state
+                continue
+
+            if code == 21:
                 self.recording_flag = True
                 print("Recording confirmed")
                 self.state_change.emit()
+                continue
 
-            if header_value[1] == 0x4002:
+            if code == 23:
                 self.recording_flag = False
                 print("Stop confirmed")
                 self.state_change.emit()
+                continue
+
+            print(f"READ: {code} - {sz}")
 
         print("Peel Recorder TCP has finished")
 
+    def recv_all(self, size):
+        data = b''
+        while len(data) < size:
+            try:
+                chunk = self.socket.recv(size - len(data))
+                if not chunk:
+                    # Connection closed by remote
+                    return None
+                data += chunk
+            except socket.timeout:
+                # Timeout while waiting for more data
+                # print("Timeout")
+                continue
+            except IOError as e:
+                # Some other socket error
+                print(f"Socket error while receiving: {e}")
+                return None
+        return data
+
     def send(self, code, message=None):
 
-        if code != 0x0004:
-            print(f"SENDING: {code}  {message}")
+        if code > 2:
+            if code == 20:
+                print(f"SENDING: record:  {message}")
+            elif code == 22:
+                print(f"SENDING: stop")
+
+            else:
+                print(f"SENDING {code} : {message}")
 
         if not self.socket:
             return False
 
         try:
             if message is None or len(message) == 0:
-                self.socket.send(struct.pack("<HHI", 0x4501, code, 0))
+                self.socket.send(struct.pack("<IIIIQ", MAGIC_NUMBER, code, 0, 0, 0))
             else:
 
                 encoded = message.encode('utf-8')
-                self.socket.send(struct.pack("<HHI", 0x4501, code, len(encoded)))
+                self.socket.send(struct.pack("<IIIIQ", MAGIC_NUMBER, code, 0, len(encoded), 0))
                 self.socket.send(encoded)
         except IOError as e:
             print("Error Sending: " + str(e))
@@ -235,7 +280,7 @@ class PeelRecorder(PeelDeviceBase):
         super(PeelRecorder, self).__init__(name)
         self.tcp = None
         self.host = "127.0.0.1"
-        self.port = 9005
+        self.port = 4455
 
     @staticmethod
     def device():
@@ -276,7 +321,10 @@ class PeelRecorder(PeelDeviceBase):
 
     def get_info(self, reason=None):
         """ return a string to show the state of the device in the main ui """
-        return str(self.tcp)
+        if self.tcp is None:
+            return ""
+        else:
+            return str(self.tcp)
 
     def get_state(self, reason=None):
         """ should return "OFFLINE", "ONLINE", "RECORDING" or "ERROR"
@@ -308,10 +356,10 @@ class PeelRecorder(PeelDeviceBase):
         print("Peel Record Command: %s  Argument: %s" % (command, argument))
 
         if command == "record":
-            self.tcp.send(0x8001, argument)
+            self.tcp.send(20, argument)
 
         if command == "stop":
-            self.tcp.send(0x8002, argument)
+            self.tcp.send(22, argument)
 
     def thread_join(self):
         """ Called when the main app is shutting down - block till the thread is finished """
