@@ -678,12 +678,11 @@ class DownloadThread(QtCore.QObject):
         self.status = self.STATUS_NONE
         self.current_index = None
         self.files = []
-        self.last_bytes = None
+        self.last_size = None
         self.last_time = None
         self.bandwidth = None
-        self.bytes = 0
-        self.file_size = 0
-        self.current_size = 0
+        self.file_size = 0     # the size of the file we are currently downloading
+        self.current_size = 0  # the size of the file we are writing to
         self.device_id = None
         self.okay_count = 0
         self.download_mode = None
@@ -691,26 +690,33 @@ class DownloadThread(QtCore.QObject):
         self.valid_takes = None
         self.create_selects_folders = None
 
+    def set_file_total_size(self, value):
+        self.file_size = value
+
+    def get_file_total_size(self):
+        return self.file_size
+
     def add_bytes(self, value):
-        if self.last_bytes is None or self.last_time is None:
-            self.last_bytes = 0
+        """ Update the amount of bytes that have been transferred with a new chunk.  Value is the amount to add """
+        if self.last_size is None or self.last_time is None:
+            self.last_size = 0
             self.last_time = time.time()
-        self.bytes += value
+        self.current_size += value
 
     def calc_bandwidth(self):
-        # print(f"Getting bandwidth {self.last_bytes} {self.last_time}")
-        if self.last_bytes is None or self.last_time is None:
-            self.last_bytes = self.bytes
+        if self.last_size is None or self.last_time is None:
+            self.last_size = self.current_size
             self.last_time = time.time()
             return 0
 
-        bytes_diff = self.bytes - self.last_bytes
+        bytes_diff = self.current_size - self.last_size
         time_diff = time.time() - self.last_time
+
         if time_diff != 0:
             self.bandwidth = bytes_diff / time_diff
         else:
             self.bandwidth = 0
-        self.last_bytes = self.bytes
+        self.last_size = self.current_size
         self.last_time = time.time()
         return self.bandwidth
 
@@ -747,6 +753,7 @@ class DownloadThread(QtCore.QObject):
     def set_finished(self):
         """ Status update when downloading has finished """
         self.file_size = 0
+        self.last_size = None
         self.current_size = 0
         self.status = self.STATUS_FINISHED
         self.all_done.emit()
@@ -769,14 +776,19 @@ class DownloadThread(QtCore.QObject):
 
     def file_ok(self, name):
         self.okay_count += 1
+        self.last_size = None
         self.file_done.emit(name, self.COPY_OK, None)
 
     def file_fail(self, name, err):
+        self.last_size = None
         self.file_done.emit(name, self.COPY_FAIL, err)
+
         
     def file_skip(self, name):
         self.okay_count += 1
+        self.last_size = None
         self.file_done.emit(name, self.COPY_SKIP, None)
+
 
     def is_running(self):
         return self.status is self.STATUS_RUNNING

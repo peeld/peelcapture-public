@@ -267,12 +267,12 @@ class EpicIPhone(PeelDeviceBase):
 
     def teardown(self):
         if self.thread is not None and self.server is not None:
-            print("Stopping current iphone OSC Server")
+            cmd.writeLog("Stopping current iphone OSC Server")
             self.server.shutdown()
             self.server.server_close()
             self.thread.join()
             self.thread = None
-            print("OSC server stopped")
+            cmd.writeLog("OSC server stopped")
 
         if self.ping_timer:
             self.ping_timer.stop()
@@ -295,24 +295,24 @@ class EpicIPhone(PeelDeviceBase):
 
         self.ping_timer.start()
 
-        print("Creating udp client")
+        cmd.writeLog("Creating udp client")
         self.client = udp_client.SimpleUDPClient(self.phone_ip, self.phone_port)
 
         try:
-            print("Starting OSC Server: " + str(self.listen_ip) + ":" + str(self.listen_port))
+            cmd.writeLog("Starting OSC Server: " + str(self.listen_ip) + ":" + str(self.listen_port))
             self.server = osc_server.ThreadingOSCUDPServer((self.listen_ip, self.listen_port), self.dispatcher)
         except IOError as e:
-            print("Could not start OSC Server: " + str(e))
+            cmd.writeLog("Could not start OSC Server: " + str(e))
             self.state = "ERROR"
             self.info = "OSC Error"
             return
 
-        print("Starting iphone thread")
+        cmd.writeLog("Starting iphone thread")
         self.thread = threading.Thread(target=self.server.serve_forever)
         self.thread.start()
 
         if self.listen_ip != "0.0.0.0":
-            print("TARGET: " + str(self.listen_ip) + " " + str(self.listen_port))
+            cmd.writeLog("TARGET: " + str(self.listen_ip) + " " + str(self.listen_port))
             self.client.send_message("/OSCSetSendTarget", [self.listen_ip, self.listen_port])
             self.client.send_message('/BatteryQuery', 1)
             self.client.send_message('/ThermalsQuery', 1)
@@ -343,8 +343,7 @@ class EpicIPhone(PeelDeviceBase):
 
     def callback(self, address, command, *args):
 
-        cmd.writeLog(f"{self.name} callback from {address}  {command}  {args}\n")
-        print(f"{self.name} callback from {address}  {command}  {args}\n")
+        cmd.writeLog(f"{self.name} callback from {address}  {command}  {args}")
 
         self.got_response = True
 
@@ -360,7 +359,7 @@ class EpicIPhone(PeelDeviceBase):
 
         if command == "/RecordStopConfirm":
             # timecode, csv, video = args
-            print("Adding " + str(self.current_take) + " " + str(args))
+            cmd.writeLog("Adding " + str(self.current_take) + " " + str(args))
 
             self.takes[self.current_take] = args
 
@@ -376,7 +375,8 @@ class EpicIPhone(PeelDeviceBase):
             try:
                 self.battery = float(args[0])
             except ValueError:
-                print("Could not parse iphone battery level: " + str(args))
+
+                cmd.writeLog("Could not parse iphone battery level: " + str(args))
                 self.state = "ERROR"
 
             self.push_state()
@@ -418,7 +418,7 @@ class EpicIPhone(PeelDeviceBase):
                 self.update_state(self.state, "")
 
         if self.client is None:
-            print("No client while sending ping")
+            cmd.writeLog("No client while sending ping")
             return
 
         self.got_response = False
@@ -460,32 +460,23 @@ class EpicIPhone(PeelDeviceBase):
                 else:
                     args_format = get_format(args, take, take_number)
 
-                print("FORMAT: " + str(args_format))
                 break
 
         for take_row in range(cmd.getTakeCount()):
 
             take = cmd.getTakeData(take_row)["take"]
 
-            print("Take is " + str(take))
-
             if self.prefix_name:
                 take_file = self.name + "_" + take
             else:
                 take_file = take
 
-
-            print("Take file is : " + str(take_file))
-
             args = []
 
             if take not in self.takes and args_format is not None:
 
-                print("Getting format")
-
                 take_number = cmd.takeNumberForTake(take)
 
-                print("Take Number: " + str(take_number))
                 if take_number == -1:
                     continue
 
@@ -494,22 +485,19 @@ class EpicIPhone(PeelDeviceBase):
                     value = value.replace("#number#", str(take_number))
                     args.append(value)
 
-                print("Created args as: " + str(args))
+                cmd.writeLog("Created args as: " + str(args))
 
             else:
 
                 args = self.takes[take]
-
-                print("Using args: " + str(args))
+                cmd.writeLog("Using args: " + str(args))
 
             if len(args) != 3:
-                print("Could not determine file name for : " + str(take))
+                cmd.writeLog("Could not determine file name for : " + str(take))
                 continue
 
             tc, mov, csv = args
-
             base, mov_name = os.path.split(mov)
-
             status = cmd.selectStatusForTake(take)
 
             if self.mha:
@@ -650,7 +638,7 @@ class IPhoneDownloadThread(DownloadThread):
 
             this_file.file_size = struct.unpack(">i", size_header)[0]
             this_file.data_size = 0
-            self.file_size = this_file.file_size
+            self.set_file_total_size(this_file.file_size)
 
             if this_file.file_size == 0:
                 this_file.error = "Zero sized file"
@@ -663,7 +651,6 @@ class IPhoneDownloadThread(DownloadThread):
 
                 fp.write(data)
                 this_file.data_size += len(data)
-                self.current_size = this_file.data_size
                 self.add_bytes(len(data))
 
             if this_file.data_size != this_file.file_size:

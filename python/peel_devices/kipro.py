@@ -115,6 +115,8 @@ class Downloader:
         print("Finished: ", self.outfile)
 
     def tick(self):
+        ret = 0
+
         if self.dest is None:
             try:
                 print("Writing to ", self.outfile)
@@ -131,13 +133,14 @@ class Downloader:
                 return False
             self.dest.write(data)
             self.read += len(data)
+            ret = len(data)
 
         except Exception as e:
             print(f"Error during download: {e}")
             self.close()
             return False
 
-        return True
+        return ret
 
     def progress(self):
         if self.total > 0:
@@ -152,7 +155,6 @@ class KiProDownloadThread(DownloadThread):
         self.kipro = kipro
         self.incomplete = None
         self.downloader = None
-        # self.bytes = 0
 
     def __str__(self):
         return f"{self.kipro} Downloader"
@@ -214,18 +216,20 @@ class KiProDownloadThread(DownloadThread):
 
                 self.file_size = self.downloader.total
 
-                while self.downloader.tick() and self.is_running():
-                    self.current_size = self.downloader.read
-                    self.calc_bandwidth()
+                while self.is_running():
+                    sz = self.downloader.tick()
+                    if sz is False:
+                        break
+
+                    self.add_bytes(sz)
                     pass
 
-                # bytes += self.downloader.total
-
+                name = str(self.kipro.name) + ":" + self.current_file().local_file
                 if self.downloader.read != self.downloader.total:
                     self.handle_incomplete_download(out)
                 else:
                     self.current_file().complete = True
-                    self.file_ok(str(self.kipro.name) + ":" + self.current_file().local_file)
+                    self.file_ok(name)
 
                 # Ki pro crashes without this
                 time.sleep(1.0)

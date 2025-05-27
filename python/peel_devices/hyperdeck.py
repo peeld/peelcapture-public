@@ -259,11 +259,13 @@ class HyperDeckDownloadThread(DownloadThread):
 
                     def write(data):
                         self.fp.write(data)
-                        self.current_size += len(data)
+                        self.add_bytes(len(data))
 
-                    self.file_size = ftp.size(file)
+                    self.set_file_total_size(ftp.size(file))
+
                     with open(local_file, 'wb') as self.fp:
                         ftp.retrbinary('RETR ' + file, write)
+
                     self.file_ok(this_file)
                 except IOError as e:
                     self.file_fail(this_file, str(e))
