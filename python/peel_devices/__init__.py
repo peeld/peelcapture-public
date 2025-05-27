@@ -27,8 +27,10 @@ from PySide6 import QtWidgets, QtCore
 import pkgutil, inspect
 import importlib
 import os
-import logging, sys
+import logging
+import sys
 import time
+from peel import file_util
 
 logger = logging.getLogger()
 logger.addHandler(logging.StreamHandler(sys.stdout))
@@ -452,10 +454,10 @@ class PeelDeviceBase(QtCore.QObject):
         """
         return False
 
-    def harvest(self, directory, all_files):
+    def harvest(self, directory):
         """ Download the takes to the local storage directory
         """
-        raise NotImplementedError
+        pass
 
     def list_takes(self):
         """ list the take files currently on the device
@@ -642,13 +644,14 @@ class DeviceCollection(QtCore.QObject):
 
 
 class FileItem(object):
-    def __init__(self, remote_file, local_file):
+    def __init__(self, remote_file, local_file, status=None):
         self.remote_file = remote_file
         self.local_file = local_file
         self.file_size = None
         self.data_size = None
         self.error = None
         self.complete = False
+        self.status = status
 
     def __str__(self):
         return str(self.local_file)
@@ -669,12 +672,12 @@ class DownloadThread(QtCore.QObject):
     STATUS_STOP = 2
     STATUS_FINISHED = 3
 
-    def __init__(self, all_files):
+    def __init__(self, directory):
         super(DownloadThread, self).__init__()
+        self.local_directory = directory
         self.status = self.STATUS_NONE
         self.current_index = None
         self.files = []
-        self.all_files = all_files
         self.last_bytes = None
         self.last_time = None
         self.bandwidth = None
@@ -683,6 +686,10 @@ class DownloadThread(QtCore.QObject):
         self.current_size = 0
         self.device_id = None
         self.okay_count = 0
+        self.download_mode = None
+        self.download_status = None
+        self.valid_takes = None
+        self.create_selects_folders = None
 
     def add_bytes(self, value):
         if self.last_bytes is None or self.last_time is None:
@@ -738,12 +745,14 @@ class DownloadThread(QtCore.QObject):
         self.status = self.STATUS_STOP
 
     def set_finished(self):
+        """ Status update when downloading has finished """
         self.file_size = 0
         self.current_size = 0
         self.status = self.STATUS_FINISHED
         self.all_done.emit()
 
     def set_started(self):
+        """ Status update when downloading starts """
         self.status = self.STATUS_RUNNING
 
     def current_file(self):
@@ -771,6 +780,86 @@ class DownloadThread(QtCore.QObject):
 
     def is_running(self):
         return self.status is self.STATUS_RUNNING
+    
+    def set_download_mode(self, mode, status=None):
+        """
+        set filter files from the device
+        mode = "All Files", "Last Take", "Selected", "Status"
+        status = values from cmd.selectModes() for when mode = "Status"
+        """
+        self.download_mode = mode
+        self.download_status = status
+        self.valid_takes = None
+
+        if mode == "Matching Files":
+            self.valid_takes = cmd.takes()
+
+        if mode == "Last Take":
+            takes = cmd.takes()
+            if takes:
+                self.valid_takes = [file_util.fix_name(takes[-1])]
+
+        if mode == "Selected":
+            self.valid_takes = [file_util.fix_name(i) for i in cmd.selectedTakes()]
+
+        print(status)
+
+        if mode == "Status" and status is not None:
+            self.valid_takes = []
+            for value in status:
+                print(value)
+                takes = cmd.takesForStatus(value)
+                print(takes)
+                self.valid_takes += [file_util.fix_name(i) for i in takes]
+
+    def download_take_check(self, take):
+
+        if self.download_mode == "All Files":
+            return True
+
+        if not self.valid_takes:
+            return False
+
+        return file_util.fix_name(take) in self.valid_takes
+
+    def set_create_selects_folders(self, value):
+        """ Create folders for take status, A/B/O etc """
+        self.create_selects_folders = value
+
+    def local_path(self, file, status=None):
+        if self.create_selects_folders:
+            print(f"Select Folders {file}")
+
+            if status is None:
+                take = os.path.splitext(os.path.basename(file))[0]
+                print("Take is " + str(take))
+                status = cmd.selectStatusForTake(take)
+
+            if status:
+                status_dir = os.path.join(self.local_directory, status)
+                if not os.path.isdir(status_dir):
+                    os.mkdir(status_dir)
+
+                print(f"using status folder {status} {file}")
+                return os.path.join(self.local_directory, status, file)
+
+        return os.path.join(self.local_directory, file)
+
+    def create_local_dir(self):
+        if not os.path.isdir(self.local_directory):
+            try:
+                os.mkdir(self.local_directory)
+            except IOError:
+                self.log("Error could not create directory: " + str(self.local_directory))
+                self.set_finished()
+                return
+
+
+
+
+
+
+
 
 
 

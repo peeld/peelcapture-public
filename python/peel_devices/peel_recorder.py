@@ -374,7 +374,7 @@ class PeelRecorder(PeelDeviceBase):
         """ Return true if harvesting (collecting files form the device) is supported """
         return False
 
-    def harvest(self, directory, all_files):
+    def harvest(self, directory):
         """ Copy all the take files from the device to directory """
         pass
 

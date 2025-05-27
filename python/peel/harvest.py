@@ -133,7 +133,10 @@ class HarvestDialog(QtWidgets.QDialog):
             brush = QtGui.QBrush(QtGui.QColor(30, 30, 30))
             for i in range(4):
                 item.setBackground(i, brush)
-            item.setCheckState(0, QtCore.Qt.Checked)
+            if device.enabled:
+                item.setCheckState(0, QtCore.Qt.Checked)
+            else:
+                item.setCheckState(0, QtCore.Qt.Unchecked)
             self.device_list.addTopLevelItem(item)
             self.device_list.setItemWidget(item, 1, pb)
             self.device_list.setItemWidget(item, 3, ts)
@@ -166,8 +169,31 @@ class HarvestDialog(QtWidgets.QDialog):
         self.stop_button = QtWidgets.QPushButton("Stop")
         self.stop_button.released.connect(self.teardown)
 
-        self.all_files = QtWidgets.QCheckBox("All Files")
-        self.all_files.setChecked(settings.value("harvestAlLFiles") == "True")
+        self.selects_folders = QtWidgets.QCheckBox("Selects Folders")
+        if settings.value("harvestSelectsFolders"):
+            self.selects_folders.setCheckState(QtCore.Qt.Checked)
+        else:
+            self.selects_folders.setCheckState(QtCore.Qt.Unchecked)
+
+        self.all_files = QtWidgets.QComboBox()
+
+        self.all_files.addItem("All Files", None)
+        self.all_files.addItem("Matching Files", None)
+        self.all_files.addItem("Last Take", None)
+        self.all_files.addItem("Selected", None)
+
+        select_modes = cmd.selectModes()
+        for item in select_modes:
+            self.all_files.addItem(item, [item])
+
+        # Generate cumulative paths
+        path = []
+        for item in select_modes:
+            path.append(item)
+            if len(path) > 1:
+                self.all_files.addItem("/".join(path), path)
+
+        self.all_files.setCurrentText(str(settings.value("harvestFilesMode")))
 
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addWidget(self.go_button)
@@ -175,6 +201,8 @@ class HarvestDialog(QtWidgets.QDialog):
         button_layout.addWidget(self.browse_button)
         button_layout.addSpacing(3)
         button_layout.addWidget(self.stop_button)
+        button_layout.addStretch(5)
+        button_layout.addWidget(self.selects_folders)
         button_layout.addStretch(1)
         button_layout.addWidget(self.all_files)
         button_layout.addSpacing(3)
@@ -207,7 +235,8 @@ class HarvestDialog(QtWidgets.QDialog):
         cmd.writeLog("harvest closing\n")
         self.settings.setValue("harvestGeometry", self.saveGeometry())
         self.settings.setValue("harvestSplitterGeometry", self.splitter.sizes())
-        self.settings.setValue("harvestAllFiles", str(self.all_files.isChecked()))
+        self.settings.setValue("harvestFilesMode", self.all_files.currentText())
+        self.settings.setValue("harvestSelectsFolders", self.selects_folders.isChecked())
         self.teardown()
 
     def go(self):
@@ -251,14 +280,28 @@ class HarvestDialog(QtWidgets.QDialog):
         device_path = os.path.join(self.path.text(), device.name)
 
         # Worker
-        worker = device.harvest(device_path, self.all_files.isChecked())
+
+        worker = device.harvest(device_path)
+        if not isinstance(worker, DownloadThread):
+            raise RuntimeError("Not a download thread object: " + str(worker))
+
+        mode = self.all_files.currentIndex()
+        if mode < 4:
+            worker.set_download_mode(self.all_files.currentText())
+        else:
+            worker.set_download_mode("Status", self.all_files.currentData())
+
+        print("----------------------")
+        print(self.selects_folders.isChecked())
+        worker.set_create_selects_folders(self.selects_folders.isChecked())
+
         worker.device_id = device_id
         worker.file_done.connect(self.file_done, QtCore.Qt.QueuedConnection)
         worker.all_done.connect(self.all_done, QtCore.Qt.QueuedConnection)
         worker.message.connect(self.log_message, QtCore.Qt.QueuedConnection)
         self.workers.append(worker)
 
-        # Thread
+        # Thread for this worker
         thread = QtCore.QThread()
         self.threads.append(thread)
         worker.moveToThread(thread)

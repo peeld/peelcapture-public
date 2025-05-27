@@ -98,8 +98,19 @@ from . import device_util
 from PeelApp import cmd
 
 
-# https://docs.unrealengine.com/en-US/AnimatingObjects/SkeletalMeshAnimation/FacialRecordingiPhone/index.html
+def get_format(args, name, take_number):
+    print("GET: " + str(name) + " " + str(take_number))
+    ret = []
+    for arg in args:
+        fixed = arg.replace(name, "#name#")
+        fixed = fixed.replace(str(take_number) + "_", "#number#_")
+        fixed = fixed.replace("_" + str(take_number), "_#number#")
+        ret.append(fixed)
+    print(ret)
+    return ret
 
+
+# https://docs.unrealengine.com/en-US/AnimatingObjects/SkeletalMeshAnimation/FacialRecordingiPhone/index.html
 
 
 class AddWidget(BaseDeviceWidget):
@@ -210,7 +221,8 @@ class EpicIPhone(PeelDeviceBase):
         self.listen_port = 6000
         self.server = None
         self.thread = None
-        self.takeNumber = None
+        self.take_number = None
+        self.last_take_number = None
         self.battery = None
         self.thermals = None
         self.info = ""
@@ -222,15 +234,16 @@ class EpicIPhone(PeelDeviceBase):
         self.prefix_name = False
         self.takes = {}
         self.current_take = None
+        self.current_name = None
         self.query = None
         self.dispatcher = None
-
 
     @staticmethod
     def device():
         return "epic-iphone"
 
     def as_dict(self):
+
         return {'name': self.name,
                 'phone_ip': self.phone_ip,
                 'phone_port': self.phone_port,
@@ -249,6 +262,7 @@ class EpicIPhone(PeelDeviceBase):
         self.takes = kwargs.get('takes')
         self.mha = kwargs.get('mha')
         self.prefix_name = kwargs.get('prefix_name')
+
         return True
 
     def teardown(self):
@@ -306,19 +320,23 @@ class EpicIPhone(PeelDeviceBase):
     def command(self, command, arg):
 
         if command == "takeNumber":
-            self.takeNumber = int(arg)
+            self.take_number = int(arg)
 
         if command == "record":
-            if self.takeNumber is None:
+            if self.take_number is None:
                 self.state = "ERROR"
                 self.info = "No take#"
                 raise RuntimeError("Take number not set while starting recording")
 
+            self.current_take = arg
+            self.last_take_number = self.take_number
             if self.prefix_name:
-                self.current_take = self.name + "_" + arg
+                self.current_name = self.name + "_" + arg
             else:
-                self.current_take = arg
-            self.client.send_message('/RecordStart', (self.current_take, self.takeNumber))
+                self.current_name = arg
+            self.client.send_message('/RecordStart', (self.current_name, self.take_number))
+
+            self.takes[self.current_take] = arg
 
         if command == "stop":
             self.client.send_message('/RecordStop', 1)
@@ -326,7 +344,7 @@ class EpicIPhone(PeelDeviceBase):
     def callback(self, address, command, *args):
 
         cmd.writeLog(f"{self.name} callback from {address}  {command}  {args}\n")
-        #print(f"{self.name} callback from {address}  {command}  {args}\n")
+        print(f"{self.name} callback from {address}  {command}  {args}\n")
 
         self.got_response = True
 
@@ -343,8 +361,9 @@ class EpicIPhone(PeelDeviceBase):
         if command == "/RecordStopConfirm":
             # timecode, csv, video = args
             print("Adding " + str(self.current_take) + " " + str(args))
-            if self.current_take:
-                self.takes[self.current_take] = args
+
+            self.takes[self.current_take] = args
+
             self.state = "ONLINE"
             self.push_state()
             return
@@ -428,32 +447,81 @@ class EpicIPhone(PeelDeviceBase):
     def has_harvest(self):
         return True
 
-    def harvest(self, directory, all_files):
+    def harvest(self, directory):
         thread = IPhoneDownloadThread(self, directory, self.listen_port)
-        for take, (timecode, csv, mov) in self.takes.items():
-            if not csv and not mov:
+
+        args_format = None
+        for take, args in self.takes.items():
+            if len(args) == 3:
+                take_number = cmd.takeNumberForTake(take)
+
+                if self.prefix_name:
+                    args_format = get_format(args, self.name + "_" + take, take_number)
+                else:
+                    args_format = get_format(args, take, take_number)
+
+                print("FORMAT: " + str(args_format))
+                break
+
+        for take_row in range(cmd.getTakeCount()):
+
+            take = cmd.getTakeData(take_row)["take"]
+
+            print("Take is " + str(take))
+
+            if self.prefix_name:
+                take_file = self.name + "_" + take
+            else:
+                take_file = take
+
+
+            print("Take file is : " + str(take_file))
+
+            args = []
+
+            if take not in self.takes and args_format is not None:
+
+                print("Getting format")
+
+                take_number = cmd.takeNumberForTake(take)
+
+                print("Take Number: " + str(take_number))
+                if take_number == -1:
+                    continue
+
+                for arg in args_format:
+                    value = arg.replace("#name#", take_file)
+                    value = value.replace("#number#", str(take_number))
+                    args.append(value)
+
+                print("Created args as: " + str(args))
+
+            else:
+
+                args = self.takes[take]
+
+                print("Using args: " + str(args))
+
+            if len(args) != 3:
+                print("Could not determine file name for : " + str(take))
                 continue
+
+            tc, mov, csv = args
+
+            base, mov_name = os.path.split(mov)
+
+            status = cmd.selectStatusForTake(take)
+
             if self.mha:
-                base, mov_name = os.path.split(mov)
-                outdir = os.path.join(directory, take)
-                if not os.path.isdir(outdir):
-                    try:
-                        os.makedirs(outdir)
-                    except OSError as e:
-                        QtWidgets.QMessageBox.warning(self, "Error", "Could not create directory")
-                        print(f"Could not create directory: {outdir}")
-                        print(str(e))
-                        return
 
                 for f in ["audio_metadata.json", "depth_data.bin", "depth_metadata.mhaical",
                           "frame_log.csv", "take.json", "thumbnail.jpg", "video_metadata.json"]:
-                    thread.files.append(FileItem(base + "/" + f, take + "/" + f))
-                thread.files.append(FileItem(mov, take + "/" + mov_name))
-
+                    thread.files.append(FileItem(base + "/" + f, take_file + "/" + f, status))
+                thread.files.append(FileItem(mov, take + "/" + mov_name, status))
 
             else:
-                thread.files.append(FileItem(csv, take + ".csv"))
-                thread.files.append(FileItem(mov, take + ".mov"))
+                thread.files.append(FileItem(csv, take_file + ".csv", status))
+                thread.files.append(FileItem(mov, take_file + ".mov", status))
 
         return thread
 
@@ -467,12 +535,10 @@ class EpicIPhone(PeelDeviceBase):
 
 class IPhoneDownloadThread(DownloadThread):
 
-    def __init__(self, phone, directory, listen_port=8444, takes=None):
-        super(IPhoneDownloadThread, self).__init__(True)
-        self.takes = takes
+    def __init__(self, phone, directory, listen_port=8444):
+        super(IPhoneDownloadThread, self).__init__(directory)
         self.phone = phone
         self.listen_port = listen_port
-        self.directory = directory
 
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.settimeout(5)
@@ -491,13 +557,7 @@ class IPhoneDownloadThread(DownloadThread):
 
         self.log("Downloading %d iphone files" % len(self.files))
 
-        if not os.path.isdir(self.directory):
-            try:
-                os.mkdir(self.directory)
-            except IOError:
-                self.log("Error could not create directory: " + str(self.directory))
-                self.set_finished()
-                return
+        self.create_local_dir()
 
         self.set_started()
 
@@ -517,10 +577,19 @@ class IPhoneDownloadThread(DownloadThread):
                 this_name = str(self.phone.name) + ":" + this_file.local_file
 
                 # Skip existing
-                full_path = os.path.join(self.directory, this_file.local_file)
+                full_path = self.local_path(this_file.local_file, this_file.status)
+
                 if os.path.isfile(full_path):
                     self.file_skip(this_name)
                     continue
+
+                out_dir = os.path.dirname(full_path)
+                if not os.path.isdir(out_dir):
+                    try:
+                        os.makedirs(out_dir)
+                    except OSError as e:
+                        self.file_fail(this_name, "Could not create directory")
+                        continue
 
                 # Tell the iphone we want it to send us a file
                 self.phone.client.send_message("/Transport", (my_address, this_file.remote_file))

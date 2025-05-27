@@ -24,23 +24,21 @@
 
 
 from peel_devices import PeelDeviceBase, SimpleDeviceWidget, DownloadThread
-from PySide6 import QtWidgets, QtCore
 from PeelApp import cmd
 
 import threading
 import time
 import random
 import sys
-import os.path
+
 
 
 class StubDownloadThread(DownloadThread):
     """ Simulates a download operation """
 
     def __init__(self, stub, directory, takes=None):
-        super(DownloadThread, self).__init__()
+        super(DownloadThread, self).__init__(directory)
         self.takes = takes
-        self.directory = directory
         self.stub = stub
         self.clips = ["clip_%d" % i for i in range(10)]
         self.current_clip = None
@@ -52,8 +50,7 @@ class StubDownloadThread(DownloadThread):
 
         self.set_started()
 
-        if not os.path.isdir(self.directory):
-            os.mkdir(self.directory)
+        self.create_local_dir()
 
         for self.current_i in range(len(self.clips)):
 
@@ -65,18 +62,17 @@ class StubDownloadThread(DownloadThread):
 
             try:
 
-                major = float(self.current_i) / float(len(self.clips))
                 for i in range(100):
 
                     if not self.is_running():
                         break
 
                     if self.current_i == 4 and i == 22:
+                        self.file_fail(self.current_clip, "Simulated Error")
                         raise RuntimeError("Error simulation")
 
-                    minor = float(i) / 100.0 / float(len(self.clips))
-                    self.tick.emit(major + minor)
-                    self.msleep(10)
+                    self.file_ok(self.current_clip)
+                    time.sleep(0.5)
 
                 self.file_ok(self.current_clip)
 
@@ -256,7 +252,7 @@ class Stub(PeelDeviceBase):
         """ Return true if harvesting (collecting files form the device) is supported """
         return True
 
-    def harvest(self, directory, all_files):
+    def harvest(self, directory):
         """ Copy all the take files from the device to directory """
         return StubDownloadThread(self, directory)
 

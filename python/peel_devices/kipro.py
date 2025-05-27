@@ -147,10 +147,9 @@ class Downloader:
 
 class KiProDownloadThread(DownloadThread):
 
-    def __init__(self, kipro, directory, all_files):
-        super().__init__(all_files)
+    def __init__(self, kipro, directory):
+        super().__init__(directory)
         self.kipro = kipro
-        self.directory = directory
         self.incomplete = None
         self.downloader = None
         # self.bytes = 0
@@ -160,10 +159,10 @@ class KiProDownloadThread(DownloadThread):
 
     def process(self):
         cmd.writeLog(f"{self} - downloading\n")
-        self.set_started()
 
-        if not os.path.isdir(self.directory):
-            os.mkdir(self.directory)
+        self.create_local_dir()
+
+        self.set_started()
 
         try:
             self.kipro.datalan()
@@ -183,24 +182,11 @@ class KiProDownloadThread(DownloadThread):
         self.message.emit("KI PRO THREAD DONE")
 
     def prepare_clips(self):
-        take_list = cmd.takes()
         self.files = []
-
         for clip in self.kipro.clips():
             name = clip['clipname']
-            if self.all_files or self.is_clip_in_takes(name, take_list):
-                print(name)
+            if self.download_take_check(name):
                 self.files.append(FileItem(name, name))
-
-    def is_clip_in_takes(self, name, take_list):
-        name_fixed = format_take_name(name)
-        for take in take_list:
-            take_fixed = format_take_name(take)
-            if self.kipro.prefix_device_name:
-                take_fixed = f"{self.kipro.name}-{take_fixed}"
-            if name_fixed.startswith(take_fixed):
-                return True
-        return False
 
     def download_clips(self):
 
@@ -214,7 +200,7 @@ class KiProDownloadThread(DownloadThread):
             if not self.is_running():
                 break
 
-            out = os.path.join(self.directory, clip.local_file)
+            out = self.local_path(clip.local_file)
 
             try:
                 url = self.get_clip_url(clip.remote_file)
@@ -252,8 +238,6 @@ class KiProDownloadThread(DownloadThread):
 
     def get_clip_url(self, remote_file):
         url = f"http://{self.kipro.host}/media/{urllib.parse.quote(remote_file)}"
-        #self.message.emit(remote_file)
-        #self.message.emit(url)
         return url
 
     def handle_incomplete_download(self, out):
@@ -595,8 +579,8 @@ class KiPro(PeelDeviceBase):
     def has_harvest(self):
         return True
 
-    def harvest(self, directory, all_files):
-        return KiProDownloadThread(self, directory, all_files)
+    def harvest(self, directory):
+        return KiProDownloadThread(self, directory)
 
     @staticmethod
     def dialog_class():

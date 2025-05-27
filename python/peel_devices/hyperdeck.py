@@ -177,8 +177,7 @@ import os.path
 from ftplib import FTP
 import ftplib
 import re
-import time
-import random
+
 
 class AddHyperDeckWidget(SimpleDeviceWidget):
     def __init__(self, settings):
@@ -192,9 +191,8 @@ class AddHyperDeckWidget(SimpleDeviceWidget):
 
 class HyperDeckDownloadThread(DownloadThread):
 
-    def __init__(self, deck, directory, all_files):
-        super(HyperDeckDownloadThread, self).__init__(all_files)
-        self.directory = directory
+    def __init__(self, deck, directory):
+        super(HyperDeckDownloadThread, self).__init__(directory)
         self.deck = deck
         self.slots = []
         self.fp = None
@@ -215,17 +213,73 @@ class HyperDeckDownloadThread(DownloadThread):
             return
 
         file = ret.group(1)
-        cmd.writeLog("FILE: " + file)
+
+        # Filter files for downloading
+        if not self.download_take_check(os.path.splitext(file)[0]):
+            cmd.writeLog("Skipping: " + str(file) + " for mode: " + str(self.download_mode))
+            return
+
         self.files.append(file)
+
+    def process_slot(self, ftp, slot):
+
+        # for each deck slot (drive)
+
+        self.create_local_dir()
+
+        cmd.writeLog("SLOT: " + str(slot))
+
+        ftp.cwd('/' + slot)
+
+        # Clear files out for each slot
+        self.files = []
+
+        ftp.retrlines('LIST', self.add_file)
+
+        for i, file in enumerate(self.files):
+
+            if not self.is_running():
+                break
+
+            self.set_current(i)
+
+            this_file = str(self.deck) + ":" + file
+
+            local_file = self.local_path(file)
+
+            if os.path.isfile(local_file):
+                # skip existing
+                self.file_skip(this_file)
+            else:
+                # download
+                cmd.writeLog("Hyperdeck downloading: " + str(file))
+                try:
+
+                    self.current_size = 0
+
+                    def write(data):
+                        self.fp.write(data)
+                        self.current_size += len(data)
+
+                    self.file_size = ftp.size(file)
+                    with open(local_file, 'wb') as self.fp:
+                        ftp.retrbinary('RETR ' + file, write)
+                    self.file_ok(this_file)
+                except IOError as e:
+                    self.file_fail(this_file, str(e))
+                except ftplib.all_errors as e:
+                    self.file_fail(this_file, str(e))
+
+                self.fp = None
+
+        else:
+            self.set_current(len(self.files))
 
     def process(self):
 
         self.set_started()
 
-        takes = cmd.takes()
-
-        if not os.path.isdir(self.directory):
-            os.mkdir(self.directory)
+        self.create_local_dir()
 
         try:
             with FTP(self.deck.host, timeout=2) as ftp:
@@ -239,79 +293,18 @@ class HyperDeckDownloadThread(DownloadThread):
                 ftp.retrlines('LIST', self.add_slot)
 
                 for slot in self.slots:
-                    # for each deck slot (drive)
-
-                    cmd.writeLog("SLOT: " + str(slot))
 
                     if not self.is_running():
                         break
 
-                    ftp.cwd('/' + slot)
-
-                    # Clear files out for each slot
-                    self.files = []
-
-                    ftp.retrlines('LIST', self.add_file)
-
-                    for i, file in enumerate(self.files):
-
-                        if not self.is_running():
-                            break
-
-                        self.set_current(i)
-
-                        file_name = os.path.splitext(file)[0].lower()
-
-                        if not self.all_files:
-
-                            file_name_fixed = file_name.replace('-', '_').replace(' ', '_').lower()
-
-                            found = False
-                            for take in takes:
-                                take_fixed = take.replace('-', '_').replace(' ', '_').lower()
-
-                                if file_name_fixed.startswith(take_fixed):
-                                    found = True
-                                    break
-                            if not found:
-                                cmd.writeLog("Skipping non take: " + str(file_name))
-                                continue
-
-                        this_file = str(self.deck) + ":" + file
-
-                        local_file = os.path.join(self.directory, file)
-
-                        if os.path.isfile(local_file):
-                            # skip existing
-                            self.file_skip(this_file)
-                        else:
-                            # download
-                            cmd.writeLog("Hyperdeck downloading: " + str(file))
-                            try:
-                                self.file_size = ftp.size(file)
-                                self.fp = open(local_file, 'wb')
-                                if not self.fp:
-                                    self.file_fail(this_file, "Could not open file for writing")
-                                else:
-                                    ftp.retrbinary('RETR ' + file, self.write)
-                                    self.file_ok(this_file)
-                            except IOError as e:
-                                self.file_fail(this_file, str(e))
-                            except ftplib.all_errors as e:
-                                self.file_fail(this_file, str(e))
-
-                    else:
-                        self.set_current(len(self.files))
+                    self.process_slot(ftp, slot)
 
         except IOError as e:
             self.message.emit("HyperDeck FTP Error:" + str(e))
+        except ftplib.all_errors as e:
+            self.message.emit("HyperDeck FTP Error:" + str(e))
 
         self.set_finished()
-
-    def write(self, data):
-        self.fp.write(data)
-        self.current_size += len(data)
-
 
 
 class HyperDeck(TcpDevice):
@@ -616,5 +609,5 @@ class HyperDeck(TcpDevice):
     def has_harvest(self):
         return True
 
-    def harvest(self, directory, all_files):
-        return HyperDeckDownloadThread(self, directory, all_files)
+    def harvest(self, directory):
+        return HyperDeckDownloadThread(self, directory)

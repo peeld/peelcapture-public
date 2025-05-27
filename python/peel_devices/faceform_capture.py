@@ -167,12 +167,12 @@ class FaceformCapture(PeelDeviceBase):
     def has_harvest(self):
         return True
 
-    def harvest(self, directory, all_files):
+    def harvest(self, directory):
         response = self.execute("GET", "takes")
         takes = response.get("takes", [])
         takes = [x for x in takes if x.get("project", "") == self.project and x.get("actor", "") == self.actor]
 
-        return CaptureDownloadThread(self, directory, takes, all_files)
+        return CaptureDownloadThread(self, directory, takes)
 
 
 class AddCaptureWidget(SimpleDeviceWidget):
@@ -211,10 +211,9 @@ class AddCaptureWidget(SimpleDeviceWidget):
 
 
 class CaptureDownloadThread(DownloadThread):
-    def __init__(self, capture, directory, takes, all_files):
-        super(CaptureDownloadThread, self).__init__(all_files)
+    def __init__(self, capture, directory, takes):
+        super(CaptureDownloadThread, self).__init__(directory)
         self.capture = capture
-        self.directory = directory
         self.takes = takes
 
     def __str__(self):
@@ -231,28 +230,22 @@ class CaptureDownloadThread(DownloadThread):
             self.set_finished()
             return
 
-        if not os.path.isdir(self.directory):
-            try:
-                os.mkdir(self.directory)
-            except IOError:
-                self.log("Can't create directory: " + str(self.directory))
-                self.set_finished()
-                return
+        self.create_local_dir()
 
         for file_index, file in enumerate(self.files):
             self.set_current(file_index)
-            try:
-                this_file = str(self.capture) + ": " + file.local_file
-                if os.path.isfile(file.local_file) and not self.all_files:
-                    self.file_skip(this_file)
-                    continue
 
-                local_dir = os.path.dirname(file.local_file)
+            this_file = str(self.capture) + ": " + file.local_file
+
+            local_path = self.local_path(file.local_file)
+
+            try:
+                local_dir = os.path.dirname(local_path)
                 if not os.path.isdir(local_dir):
                     os.makedirs(local_dir)
 
                 response = requests.get(file.remote_file, stream=True)
-                with open(file.local_file, 'wb') as f:
+                with open(local_path, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=1048576):
                         f.write(chunk)
 
@@ -273,8 +266,12 @@ class CaptureDownloadThread(DownloadThread):
             files_relative = CaptureDownloadThread.scan_take_location(http_address, location)
 
             for file in files_relative:
-                self.files.append(FileItem(os.path.join(http_address, file),
-                                           os.path.join(self.directory, file)))
+
+                name = os.path.splitext(file)[0]
+                if not self.download_take_check(name):
+                    continue
+
+                self.files.append(FileItem(os.path.join(http_address, file), file))
 
     @staticmethod
     def scan_take_location(http_address, file_path):

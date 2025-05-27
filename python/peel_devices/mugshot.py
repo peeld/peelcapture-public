@@ -147,17 +147,15 @@ class Mugshot(PeelDeviceBase):
     def has_harvest(self):
         return True
 
-    def harvest(self, directory, all_files=False):
-        return MugshotDownloadThread(self, directory, all_files)
+    def harvest(self, directory):
+        return MugshotDownloadThread(self, directory)
 
 
 class MugshotDownloadThread(DownloadThread):
 
-    def __init__(self, mugshot, directory, all_files):
-        super(MugshotDownloadThread, self).__init__()
-        self.directory = directory
+    def __init__(self, mugshot, directory):
+        super(MugshotDownloadThread, self).__init__(directory)
         self.mugshot = mugshot
-        self.all_files = all_files
 
     def __str__(self):
         return str(self.mugshot) + " Downloader"
@@ -168,9 +166,7 @@ class MugshotDownloadThread(DownloadThread):
 
         self.set_started()
 
-        # create destination directory
-        if not os.path.isdir(self.directory):
-            os.mkdir(self.directory)
+        self.create_local_dir()
 
         try:
             directories_to_explore = deque([""])  # Start with the root directory
@@ -190,13 +186,13 @@ class MugshotDownloadThread(DownloadThread):
                             directories_to_explore.append(f"{current_path}{name}/")
                         elif name.endswith('.mov'):
 
-                            if not self.should_download(name):
+                            if not self.download_take_check(name):
                                 continue
 
                             src_path = f"{current_path}{name}"
 
                             this_file = str(self.mugshot) + ":" + name
-                            local_file = os.path.join(self.directory, name)
+                            local_file = self.local_path(name)
 
                             if os.path.isfile(local_file):
                                 # skip existing
@@ -221,11 +217,3 @@ class MugshotDownloadThread(DownloadThread):
         finally:
             self.message.emit("mugshot finishing")
             self.set_finished()
-    def should_download(self, mov_name):
-        if self.all_files:
-            return True
-        else:
-            for take_name in cmd.takes():
-                if take_name in mov_name:
-                    return True
-            return False

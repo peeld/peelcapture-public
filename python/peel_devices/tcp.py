@@ -1,5 +1,6 @@
 from peel_devices import PeelDeviceBase
 from PySide6.QtNetwork import QTcpSocket, QAbstractSocket
+from PySide6.QtCore import QTimer
 
 
 class TcpDevice(PeelDeviceBase):
@@ -16,9 +17,17 @@ class TcpDevice(PeelDeviceBase):
         self.info = None
 
     def send(self, msg):
-        #if self.connected_state != "CONNECTED":
-        #    self.tcp.connectToHost(self.host, self.port)
-        print(msg.strip())
+        if self.tcp is None:
+            print("TCP socket not initialized. Attempting to reconnect...")
+            self.connect_device()
+            return
+
+        if self.tcp.state() != QAbstractSocket.ConnectedState:
+            print("TCP not connected. Attempting to reconnect...")
+            self.connect_device()
+            return
+
+        print("Sending:", msg.strip())
         self.tcp.write(msg.encode("utf8"))
 
     def do_read(self):
@@ -30,7 +39,10 @@ class TcpDevice(PeelDeviceBase):
 
     def do_disconnected(self):
         self.connected_state = "OFFLINE"
-        self.update_state(self.connected_state, "")
+        self.update_state(self.connected_state, "Disconnected")
+
+        # Optional: Retry connection after delay
+        QTimer.singleShot(2000, self.connect_device)
 
     def do_error(self, err):
         print("ERROR", str(err))
@@ -92,10 +104,12 @@ class TcpDevice(PeelDeviceBase):
                 'port': self.port}
 
     def teardown(self):
-        if self.tcp is not None:
-            if self.connected_state == "CONNECTED":
+        if self.tcp:
+            print("Tearing down TCP connection...")
+            if self.tcp.state() == QAbstractSocket.ConnectedState:
                 self.tcp.disconnectFromHost()
             self.tcp.close()
+            self.tcp.deleteLater()
             self.tcp = None
 
     def reconfigure(self, name, **kwargs):
@@ -113,13 +127,19 @@ class TcpDevice(PeelDeviceBase):
         return True
 
     def connect_device(self):
-
         print(f"TCP Connecting to {self.host} {self.port}")
+
+        # Tear down existing socket if needed
+        if self.tcp is not None:
+            self.tcp.abort()  # Immediately disconnect any existing connection
+            self.tcp.deleteLater()
+
         self.tcp = QTcpSocket()
         self.tcp.connected.connect(self.do_connected)
         self.tcp.disconnected.connect(self.do_disconnected)
         self.tcp.readyRead.connect(self.do_read)
         self.tcp.errorOccurred.connect(self.do_error)
+
         self.tcp.connectToHost(self.host, self.port)
 
     def get_state(self, reason=None):
