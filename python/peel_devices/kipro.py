@@ -31,6 +31,7 @@ from peel_devices import PeelDeviceBase, SimpleDeviceWidget, DownloadThread, Fil
 import json
 import re
 import traceback
+from peel import file_util
 
 # http://192.168.15.151/descriptors
 
@@ -52,19 +53,28 @@ class KiProDialog(SimpleDeviceWidget):
         self.form_layout.addRow("Prefix Device Name", self.cb_prefix_device_name)
         self.cb_prefix_device_name.setChecked(settings.value(self.title + "PrefixDeviceName") == "True")
 
+        self.cb_quad = QtWidgets.QCheckBox("")
+        self.form_layout.addRow("Quad", self.cb_quad)
+        self.cb_quad.setChecked(settings.value(self.title + "Quad") == "True")
+
     def populate_from_device(self, device):
         super().populate_from_device(device)
         self.cb_prefix_device_name.setChecked(bool(device.prefix_device_name))
+        self.cb_quad.setChecked(bool(device.quad))
 
     def update_device(self, device, data=None):
-        data = {'prefix_device_name': self.cb_prefix_device_name.isChecked()}
+        data = {
+            'prefix_device_name': self.cb_prefix_device_name.isChecked(),
+            'quad': self.cb_quad.isChecked()
+        }
         return super().update_device(device, data)
 
     def do_add(self):
         if not super().do_add():
             return None
 
-        self.settings.setValue(self.title + "PrefixDeviceName", self.cb_prefix_device_name.isChecked())
+        self.settings.setValue(self.title + "PrefixDeviceName", str(self.cb_prefix_device_name.isChecked()))
+        self.settings.setValue(self.title + "Quad", str(self.cb_quad.isChecked()))
 
         return True
 
@@ -150,9 +160,11 @@ class Downloader:
 
 class KiProDownloadThread(DownloadThread):
 
-    def __init__(self, kipro, directory):
+    def __init__(self, kipro, directory, quad, prefix):
         super().__init__(directory)
         self.kipro = kipro
+        self.quad = quad
+        self.prefix = prefix
         self.incomplete = None
         self.downloader = None
 
@@ -184,11 +196,23 @@ class KiProDownloadThread(DownloadThread):
         self.message.emit("KI PRO THREAD DONE")
 
     def prepare_clips(self):
+        """ Get the list of clips and process them to being potential take names """
         self.files = []
         for clip in self.kipro.clips():
-            name = clip['clipname']
+            name = os.path.splitext(clip['clipname'])[0]
+
+            # remove any _1 _2 _3 or _4 suffix from the quad
+            if self.quad:
+                name = re.sub(r'_(1|2|3|4)$', '', name)
+
+            name = file_util.fix_name(name)
+
+            # remove the device name prefix
+            if self.prefix and name.startswith(file_util.fix_name(self.prefix)):
+                name = name[len(self.prefix):]
+
             if self.download_take_check(name):
-                self.files.append(FileItem(name, name))
+                self.files.append(FileItem(clip['clipname'], clip['clipname']))
 
     def download_clips(self):
 
@@ -255,7 +279,6 @@ class KiProDownloadThread(DownloadThread):
         self.file_fail(str(self.kipro) + ":" + self.current_file().local_file, str(error))
 
 
-
 class KiPro(PeelDeviceBase):
     eTCNoCommand = 0
     eTCPlay = 1
@@ -292,6 +315,8 @@ class KiPro(PeelDeviceBase):
         self.next_play = 0
         self.fp = None
         self.prefix_device_name = False
+        self.quad = False
+        self.desc = None
 
     @staticmethod
     def device():
@@ -300,12 +325,15 @@ class KiPro(PeelDeviceBase):
     def as_dict(self):
         return {'name': self.name,
                 'host': self.host,
-                'prefix_device_name': self.prefix_device_name}
+                'prefix_device_name': self.prefix_device_name,
+                'quad': self.quad
+                }
 
     def reconfigure(self, name, **kwargs):
         self.name = name
         self.host = kwargs.get("host", None)
         self.prefix_device_name = kwargs.get("prefix_device_name", False)
+        self.quad = kwargs.get('quad', False)
         return True
 
     def __str__(self):
@@ -325,6 +353,11 @@ class KiPro(PeelDeviceBase):
         self.message = None
         QtCore.QTimer.singleShot(500, self.update_state)
 
+    def get_desc(self):
+        url = "http://" + self.host + "/desc.json"
+        with urllib.request.urlopen(url, timeout=1) as f:
+            self.desc = json.loads(f.read())
+
     def get_state(self, reason=None):
 
         """ called via update_state() - do not call update_state or device_ref here """
@@ -336,6 +369,12 @@ class KiPro(PeelDeviceBase):
 
         if self.downloading:
             return "OFFLINE"
+
+        state1 = self.alarm_state()
+        state2 = self.alarm_state2()
+        state3 = self.storage_state()
+        if state1 != 0 or state2 != 0 or state3 != 0:
+            return "ERROR"
 
         transport = self.transport_state()
 
@@ -373,7 +412,38 @@ class KiPro(PeelDeviceBase):
         return "ERROR"
 
     def get_info(self, reason=None):
-        return self.message or ""
+
+        if self.desc is None:
+            self.get_desc()
+
+        if self.desc is None:
+            return self.message
+
+        data = {}
+
+        for row in self.desc:
+            if 'param_id' not in row or 'enum_values' not in row:
+                continue
+            data[row['param_id']] = row['enum_values']
+
+        errors = []
+        if self.message:
+            errors.append(self.message)
+
+        def get_fields(param, bitfield):
+            nonlocal errors
+            if param in data:
+                field = data[param]
+                errors += [item['short_text'] for item in field if item['value'] & bitfield]
+
+        get_fields('eParamID_Alarm', self.alarm_state())
+        get_fields('eParamID_ExtendedAlarm', self.alarm_state2())
+        get_fields('eParamID_StorageAlarm', self.storage_state())
+
+        if not errors:
+            return str(self.record_state())
+        else:
+            return " ".join(errors)
 
     def command(self, command, arg):
 
@@ -460,6 +530,24 @@ class KiPro(PeelDeviceBase):
 
     def media_state(self):
         return self.get_param('eParamID_MediaState')
+
+    def alarm_state(self):
+        ret = self.get_param('eParamID_Alarm', 'value')
+        if ret is None or ret == "None":
+            return 0
+        return int(ret)
+
+    def alarm_state2(self):
+        ret = self.get_param('eParamID_ExtendedAlarm', 'value')
+        if ret is None or ret == "None":
+            return 0
+        return int(ret)
+
+    def storage_state(self):
+        ret = self.get_param('eParamID_StorageAlarm', 'value')
+        if ret is None or ret == "None":
+            return 0
+        return int(ret)
 
     def clip_name(self, name):
         name = format_take_name(name)
@@ -584,7 +672,10 @@ class KiPro(PeelDeviceBase):
         return True
 
     def harvest(self, directory):
-        return KiProDownloadThread(self, directory)
+        prefix = None
+        if self.prefix_device_name:
+            prefix = self.name + "_"
+        return KiProDownloadThread(self, directory, self.quad, prefix)
 
     @staticmethod
     def dialog_class():

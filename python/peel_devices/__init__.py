@@ -229,8 +229,9 @@ class PeelDeviceBase(QtCore.QObject):
 
     """ Base class for all devices """
 
-    def __init__(self, name, parent=None):
+    def __init__(self, name, parent=None, *args, **kwargs):
 
+        print("PEEL DEVICE")
         """ (v1.37) Class constructors should only populate the unique name for the device and the
         default values for the variables needed by the ui.  The constructor does not take any arguments in it
         just sets the default values.  The device values are populated by "reconfigure".
@@ -276,7 +277,7 @@ class PeelDeviceBase(QtCore.QObject):
 
 
         """
-        super(PeelDeviceBase, self).__init__(parent)
+        super().__init__(parent, *args, **kwargs)
         self.name = name
         self.device_id = None  # set by DeviceCollection::add_device()
         self.plugin_id = -1    # reference to a dll plugin created by cmd.createDevice(...)
@@ -486,6 +487,10 @@ class DeviceCollection(QtCore.QObject):
                         klass.device()
                     except NotImplementedError:
                         continue
+                    except Exception as e:
+                        print("Error loading device: " + str(klass))
+                        print("Error: " + str(e))
+                        continue
                     yield klass
 
         # Search for valid classes in peel_user_devices module, if it exists
@@ -631,7 +636,7 @@ class DeviceCollection(QtCore.QObject):
                     device.reconfigure(**device_data)
                     device.connect_device()
 
-                except TypeError as e:
+                except Exception as e:
                     print("Error recreating class: " + str(class_name))
                     print(str(e))
                     print(str(device_data))
@@ -689,6 +694,7 @@ class DownloadThread(QtCore.QObject):
         self.download_status = None
         self.valid_takes = None
         self.create_selects_folders = None
+        self.match_mode = None
 
     def set_file_total_size(self, value):
         self.file_size = value
@@ -752,9 +758,7 @@ class DownloadThread(QtCore.QObject):
 
     def set_finished(self):
         """ Status update when downloading has finished """
-        self.file_size = 0
-        self.last_size = None
-        self.current_size = 0
+        self.file_reset()
         self.status = self.STATUS_FINISHED
         self.all_done.emit()
 
@@ -776,22 +780,28 @@ class DownloadThread(QtCore.QObject):
 
     def file_ok(self, name):
         self.okay_count += 1
-        self.last_size = None
+        self.file_reset()
         self.file_done.emit(name, self.COPY_OK, None)
 
     def file_fail(self, name, err):
-        self.last_size = None
+        self.file_reset()
         self.file_done.emit(name, self.COPY_FAIL, err)
 
-        
     def file_skip(self, name):
         self.okay_count += 1
-        self.last_size = None
+        self.file_reset()
         self.file_done.emit(name, self.COPY_SKIP, None)
 
+    def file_reset(self):
+        self.last_size = None
+        self.file_size = 0
+        self.current_size = 0
 
     def is_running(self):
         return self.status is self.STATUS_RUNNING
+
+    def set_match_mode(self, match_mode):
+        self.match_mode = match_mode
     
     def set_download_mode(self, mode, status=None):
         """
@@ -803,36 +813,68 @@ class DownloadThread(QtCore.QObject):
         self.download_status = status
         self.valid_takes = None
 
-        if mode == "Matching Files":
+        if mode.startswith("Matching"):
             self.valid_takes = cmd.takes()
 
         if mode == "Last Take":
             takes = cmd.takes()
             if takes:
-                self.valid_takes = [file_util.fix_name(takes[-1])]
+                self.valid_takes = takes[-1]
 
         if mode == "Selected":
-            self.valid_takes = [file_util.fix_name(i) for i in cmd.selectedTakes()]
-
-        print(status)
+            self.valid_takes = cmd.selectedTakes()
 
         if mode == "Status" and status is not None:
             self.valid_takes = []
             for value in status:
-                print(value)
-                takes = cmd.takesForStatus(value)
-                print(takes)
-                self.valid_takes += [file_util.fix_name(i) for i in takes]
+                self.valid_takes += cmd.takesForStatus(value)
+
+        if self.valid_takes is not None:
+            self.valid_takes = [file_util.fix_name(i) for i in self.valid_takes]
+            print(f"{len(self.valid_takes)} valid takes")
+            print(self.valid_takes)
 
     def download_take_check(self, take):
 
+        """ Return true of the take file should be downloaded. """
+
+        print("Checking: " + str(take))
+
         if self.download_mode == "All Files":
+            return True
+
+        if self.valid_takes is None:
             return True
 
         if not self.valid_takes:
             return False
 
-        return file_util.fix_name(take) in self.valid_takes
+        fixed = file_util.fix_name(take)
+
+        if self.match_mode == "Exact":
+            if fixed in self.valid_takes:
+                return True
+            return False
+
+        if self.match_mode == "Starts With":
+            for each_take in self.valid_takes:
+                if each_take.startswith(fixed):
+                    return True
+            return False
+
+        if self.match_mode == "Contains":
+            for each_take in self.valid_takes:
+                if fixed in self.valid_takes:
+                    return True
+            return False
+
+        found = False
+        for i in self.valid_takes:
+            if take.startswith(i):
+                found = True
+                break
+
+        return found
 
     def set_create_selects_folders(self, value):
         """ Create folders for take status, A/B/O etc """
@@ -840,11 +882,9 @@ class DownloadThread(QtCore.QObject):
 
     def local_path(self, file, status=None):
         if self.create_selects_folders:
-            print(f"Select Folders {file}")
 
             if status is None:
                 take = os.path.splitext(os.path.basename(file))[0]
-                print("Take is " + str(take))
                 status = cmd.selectStatusForTake(take)
 
             if status:
@@ -852,7 +892,6 @@ class DownloadThread(QtCore.QObject):
                 if not os.path.isdir(status_dir):
                     os.mkdir(status_dir)
 
-                print(f"using status folder {status} {file}")
                 return os.path.join(self.local_directory, status, file)
 
         return os.path.join(self.local_directory, file)

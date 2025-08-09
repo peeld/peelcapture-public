@@ -311,9 +311,9 @@ class HyperDeckDownloadThread(DownloadThread):
 
 class HyperDeck(TcpDevice):
 
-    def __init__(self, name="Hyperdeck"):
-
-        super(HyperDeck, self).__init__(name)
+    def __init__(self, name="Hyperdeck", *args, **kwargs):
+        print("HYPERDECK")
+        super().__init__(name, *args, **kwargs)
         self.host = "192.168.1.100"
         self.port = 9993
         self.device_state = "OFFLINE"

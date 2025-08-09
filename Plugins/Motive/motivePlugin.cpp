@@ -206,7 +206,7 @@ bool MotivePlugin::connect()
 		// Not using sendMessage here to avoid possible circular call .
 		uint8_t* data;
 		int   sz;
-		error = client.SendMessageAndWait("SubscribeToData,Skeleton", (void**)&data, &sz);
+		error = client.SendMessageAndWait("SubscribeToData,RigidBody,Skeleton,LabeledMarkers", (void**)&data, &sz);
 		if (error != ErrorCode::ErrorCode_OK)
 		{
 			logMessage("Motive Subscribe Skeleton Failed");
@@ -360,6 +360,10 @@ void MotivePlugin::getSubjectNames()
 	}
 
 	subjectDict.clear();
+
+	if (dataDescriptions == nullptr) {
+		return;
+	}
 
 	for (int i = 0; i < dataDescriptions->nDataDescriptions; i++)
 	{

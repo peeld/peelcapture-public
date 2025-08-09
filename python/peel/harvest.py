@@ -73,6 +73,9 @@ class TimeSeriesWidget(QtWidgets.QWidget):
 
 
 class HarvestDialog(QtWidgets.QDialog):
+
+    start_processing = QtCore.Signal()
+
     def __init__(self, settings, devices, parent):
         super(HarvestDialog, self).__init__(parent)
 
@@ -140,6 +143,9 @@ class HarvestDialog(QtWidgets.QDialog):
             self.device_list.addTopLevelItem(item)
             self.device_list.setItemWidget(item, 1, pb)
             self.device_list.setItemWidget(item, 3, ts)
+            thread = QtCore.QThread()
+            thread.start()
+            self.threads.append(thread)
 
         self.splitter.addWidget(self.device_list)
         self.splitter.setSizes([1, 3])
@@ -170,15 +176,17 @@ class HarvestDialog(QtWidgets.QDialog):
         self.stop_button.released.connect(self.teardown)
 
         self.selects_folders = QtWidgets.QCheckBox("Selects Folders")
-        if settings.value("harvestSelectsFolders"):
+        if settings.value("harvestSelectsFolders") == "True":
             self.selects_folders.setCheckState(QtCore.Qt.Checked)
         else:
             self.selects_folders.setCheckState(QtCore.Qt.Unchecked)
 
+        # Take Matching
+
         self.all_files = QtWidgets.QComboBox()
 
         self.all_files.addItem("All Files", None)
-        self.all_files.addItem("Matching Files", None)
+        self.all_files.addItem("Matching", None)
         self.all_files.addItem("Last Take", None)
         self.all_files.addItem("Selected", None)
 
@@ -195,6 +203,13 @@ class HarvestDialog(QtWidgets.QDialog):
 
         self.all_files.setCurrentText(str(settings.value("harvestFilesMode")))
 
+        # Match Mode
+        self.match_mode = QtWidgets.QComboBox()
+        self.match_mode.addItem("Exact")
+        self.match_mode.addItem("Starts With")
+        self.match_mode.addItem("Contains")
+        self.match_mode.setCurrentText(str(settings.value("harvestFilesMatch")))
+
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addWidget(self.go_button)
         button_layout.addSpacing(3)
@@ -205,6 +220,8 @@ class HarvestDialog(QtWidgets.QDialog):
         button_layout.addWidget(self.selects_folders)
         button_layout.addStretch(1)
         button_layout.addWidget(self.all_files)
+        button_layout.addStretch(1)
+        button_layout.addWidget(self.match_mode)
         button_layout.addSpacing(3)
 
         layout.addItem(button_layout)
@@ -221,36 +238,48 @@ class HarvestDialog(QtWidgets.QDialog):
         if sizes:
             self.splitter.setSizes([int(i) for i in sizes])
 
+    def closeEvent(self, e):
+        self.teardown()
+
     def teardown(self):
         self.running = False
         cmd.writeLog("Harvest teardown\n")
         for worker in self.workers:
             worker.teardown()
         for thread in self.threads:
-            thread.exit(0)
+            thread.quit()
         for thread in self.threads:
             thread.wait()
 
     def __del__(self):
-        cmd.writeLog("harvest closing\n")
-        self.settings.setValue("harvestGeometry", self.saveGeometry())
-        self.settings.setValue("harvestSplitterGeometry", self.splitter.sizes())
-        self.settings.setValue("harvestFilesMode", self.all_files.currentText())
-        self.settings.setValue("harvestSelectsFolders", self.selects_folders.isChecked())
         self.teardown()
+        cmd.writeLog("harvest closing\n")
 
     def go(self):
 
-        # Go button has been pressed, lets get started...
+        # Go button has been pressed
+
+        self.settings.setValue("harvestGeometry", self.saveGeometry())
+        self.settings.setValue("harvestSplitterGeometry", self.splitter.sizes())
+        self.settings.setValue("harvestFilesMode", self.all_files.currentText())
+        self.settings.setValue("harvestFilesMatch", self.match_mode.currentText())
+        self.settings.setValue("harvestSelectsFolders", str(self.selects_folders.isChecked()))
 
         if self.running is True:
+
+            # Already running, lets stop
             self.running = False
-            self.teardown()
+            for worker in self.workers:
+                worker.teardown()
+                del worker
+
             self.go_button.setText("Get Files")
+            self.workers = []
             return
 
+        # lets start
+
         self.workers = []
-        self.threads = []
 
         for i in range(self.device_list.topLevelItemCount()):
             item = self.device_list.topLevelItem(i)
@@ -275,7 +304,12 @@ class HarvestDialog(QtWidgets.QDialog):
 
         self.update_gui()
 
-    def make_worker(self, device_id):
+        # Start workers
+        print("Starting work (threaded)")
+        self.start_processing.emit()
+
+    def make_worker(self, device_id: int):
+
         device = self.devices[device_id]
         device_path = os.path.join(self.path.text(), device.name)
 
@@ -291,6 +325,8 @@ class HarvestDialog(QtWidgets.QDialog):
         else:
             worker.set_download_mode("Status", self.all_files.currentData())
 
+        worker.set_match_mode(self.match_mode.currentText())
+
         print("----------------------")
         print(self.selects_folders.isChecked())
         worker.set_create_selects_folders(self.selects_folders.isChecked())
@@ -299,14 +335,11 @@ class HarvestDialog(QtWidgets.QDialog):
         worker.file_done.connect(self.file_done, QtCore.Qt.QueuedConnection)
         worker.all_done.connect(self.all_done, QtCore.Qt.QueuedConnection)
         worker.message.connect(self.log_message, QtCore.Qt.QueuedConnection)
+        self.start_processing.connect(worker.process)
+
         self.workers.append(worker)
 
-        # Thread for this worker
-        thread = QtCore.QThread()
-        self.threads.append(thread)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.process)
-        thread.start()
+        worker.moveToThread(self.threads[device_id])
 
     def update_gui(self):
         if self.running:
@@ -321,6 +354,7 @@ class HarvestDialog(QtWidgets.QDialog):
             self.go_button.setText("Get Files")
 
     def do_update(self):
+
         if self.is_done():
             self.update_timer.stop()
             msg = "Download Complete\n\nFiles copied: %d\nFiles skipped: %d\nFiles failed: %d" % \
@@ -406,7 +440,6 @@ class HarvestDialog(QtWidgets.QDialog):
     def all_done(self):
         device = self.sender()
         index = self.workers.index(device)
-        self.threads[index].exit()
 
     def sender_device_id(self):
         ref = self.sender()

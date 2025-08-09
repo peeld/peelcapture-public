@@ -342,9 +342,9 @@ class Reaper(Osc):
             self.client_send("t/record", 1)
 
 
-class UnrealDialog(peel_devices.SimpleDeviceWidget):
+class UnrealOSCDialog(peel_devices.SimpleDeviceWidget):
     def __init__(self, settings):
-        super(UnrealDialog, self).__init__(settings, "Unreal", has_host=True, has_port=True,
+        super(UnrealOSCDialog, self).__init__(settings, "Unreal", has_host=True, has_port=True,
                                            has_broadcast=True, has_listen_ip=True, has_listen_port=True)
         link = 'https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-unreal-engine/'
         msg = '<P><A HREF="' + link + '">Documentation</A></P>'
@@ -355,9 +355,9 @@ class UnrealDialog(peel_devices.SimpleDeviceWidget):
         self.set_info(msg)
 
 
-class Unreal(Osc):
+class UnrealOSC(Osc):
     def __init__(self, name="Unreal"):
-        super(Unreal, self).__init__(OscListenThreadUnreal, name)
+        super(UnrealOSC, self).__init__(OscListenThreadUnreal, name)
         self.shot_name = None
 
     @staticmethod
@@ -366,7 +366,7 @@ class Unreal(Osc):
 
     @staticmethod
     def dialog_class():
-        return UnrealDialog
+        return UnrealOSCDialog
 
     def get_state(self, reason=None):
         if not self.enabled:
@@ -374,7 +374,7 @@ class Unreal(Osc):
         if self.state == "OFFLINE":
             self.client_send("/OSCAddSendTarget", (self.listen_ip, self.listen_port))
 
-        return super(Unreal, self).get_state(reason)
+        return super(UnrealOSC, self).get_state(reason)
 
     def command(self, command, argument):
         if not self.client:

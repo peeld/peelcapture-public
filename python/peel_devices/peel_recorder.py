@@ -23,244 +23,359 @@
 # OR NOT THE LICENSOR WAS ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
 
 
-from peel_devices import PeelDeviceBase, SimpleDeviceWidget
-from PySide6 import QtWidgets, QtCore
-from PeelApp import cmd
-
-import time
-import random
-import socket
-import select
+from peel_devices import PeelDeviceBase, DownloadThread, SimpleDeviceWidget, udp, tcp
+from PySide6 import QtCore, QtNetwork
+import json
+import os
 import struct
+import hashlib
 
 MAGIC_NUMBER = 0x45020003
 
 
-class SocketThread(QtCore.QThread):
+class Parser(tcp.TcpBase, QtCore.QObject):
 
+    PARSE_ERROR = -1
+    KEEP_PARSING = 0
+    NEED_DATA = 1
+
+    # Device
     state_change = QtCore.Signal()
+    state_disconnect = QtCore.Signal()
+    state_connect = QtCore.Signal()
 
-    def __init__(self):
-        super(SocketThread, self).__init__()
-        self.host = None
-        self.port = None
-        self.running = False
-        self.error_flag = None
-        self.connected_flag = False
-        self.socket = None
-        self.active_flag = False
-        self.recording_flag = False
+    # Harvest
+    received_file_list = QtCore.Signal()
+    file_is_done = QtCore.Signal(str)
+    file_has_failed = QtCore.Signal(str)
+    bytes_added = QtCore.Signal(int)
 
-    def __str__(self):
-        if self.active_flag:
-            return "active"
+    def __init__(self, parent):
+        super().__init__(parent)
 
-        if self.connected_flag:
-            return "connected"
+        super().reconnect_timeout(3000)
 
-        return "disconnected"
+        self.data = b''
+        self.recording = False
+        self.file_list = None
 
-    def tcp_start(self, host, port):
-        print(f"Starting tcp by method {host} {port}")
-        self.stop_thread()
-        self.host = host
-        self.port = port
-        if host and port:
-            self.start()
+        # File transfer state
+        self.current_file = None
+        self.expecting_file = False
+        self.file_code = None
+        self.file_size = 0
+        self.file_received = 0
+        self.file_handle = None
+        self.file_path = ""
+        self.expected_hash = None
+        self.hash_calc = hashlib.sha256()
+        self.out_dir = None
 
-    def tcp_connect(self):
+    def reset(self):
+        self.file_list = None
+        self.current_file = None
+        self.recording = False
 
-        if self.connected_flag:
-            self.tcp_disconnect()
-
-        if not self.host or not self.port:
-            print(f"Invalid: host={self.host}  port={self.port}")
-            return
-
-        if self.socket is None:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
-            self.socket.setblocking(False)
-            self.socket.settimeout(1)
-
-        try:
-            self.socket.connect((self.host, self.port))
-        except socket.timeout:
-            return False
-        except IOError as e:
-            print("Error connecting to Peel Recorder")
-            self.tcp_disconnect()
-            print(e)
-            return False
-
-        print(f"Connected to Reel Recorder: {self.host} {self.port}")
-        self.connected_flag = True
-
-        return True
-
-    def is_running(self):
-        return self.running is True
-
-    def is_connected(self):
-        return self.connected_flag
-
-    def tcp_disconnect(self):
-
-        try:
-            self.socket.shutdown(socket.SHUT_RDWR)
-            self.socket.close()
-            self.socket = None
-        except IOError as e:
-            print("Error closing peel recorder socket: " + str(e))
-
-        self.connected_flag = False
-        self.active_flag = False
-        print("Closed connection to Peel Recorder")
+    def do_connected(self):
+        self.error = None
+        super().do_connected()
+        self.state_connect.emit()
         self.state_change.emit()
 
-    def stop_thread(self):
-        if self.running:
-            self.running = False
-            if self.connected_flag:
-                self.tcp_disconnect()
+    def do_disconnected(self):
+        super().do_disconnected()
+        self.state_disconnect.emit()
+        self.state_change.emit()
 
-    def run(self):
+    def do_error(self, err):
+        super().do_error(err)
+        self.state_change.emit()
 
-        print(f"TCP Thread started {self.host} {self.port}")
+    def get_file_list(self, out_dir):
+        print("Requesting file list")
+        self.out_dir = out_dir
+        self.send(110)
 
-        self.running = True
-        self.active_flag = False
+    def get_file(self, file_name):
+        print("Transferring: " + str(file_name))
+        self.current_file = file_name
+        self.send(112, file_name)
 
-        count = 0
+    def do_read(self):
 
-        while self.running:
+        """ Read bytes from the socket while they are available """
+        while self.tcp.bytesAvailable():
+            new_data = self.tcp.readAll().data()
+            if new_data is None or len(new_data) == 0:
+                continue
 
-            if self.connected_flag is False:
-                if not self.tcp_connect():
-                    time.sleep(5)
+            if self.expecting_file:
+                self._handle_file_data(new_data)
+                continue
+
+            self.data += new_data
+
+            while True:
+
+                if len(self.data) < 24:
+                    # we have not received enough data yet, wait for self.data to fill up
+                    break
+
+                ret = self._parse_and_process_header()
+                if ret is self.KEEP_PARSING:
                     continue
+                if ret is self.NEED_DATA:
+                    break
+                if ret is self.PARSE_ERROR:
+                    print("Closing")
+                    self.tcp.close()
+                    self.state_change.emit()
+                    return
 
-            try:
-                ret, _, _ = select.select([self.socket], [], [], 2)
-                if not ret:
-                    count += 1
-                    if count > 20:
-                        self.tcp_disconnect()
-                        continue
-            except IOError as e:
-                print("Error getting data from socket: " + str(e))
-                self.tcp_disconnect()
-                continue
+    def _handle_file_data(self, message: bytes) -> int:
 
-            count = 0
+        """ We are currently transferring a file """
 
-            header = self.recv_all(24)
+        remaining = self.file_size - self.file_received
+        to_write = min(len(message), remaining)
 
-            if header is None:
-                print("No header data")
-                self.tcp_disconnect()
-                continue
+        if to_write > 0:
+            self.write_file(message[:to_write])
 
-            # four bytes magic
-            # four bytes code
-            # four bytes checksum
-            # four bytes size of blob
-            # eight bytes timestamp
+        if self.file_received >= self.file_size:
+            self.finish_file()
 
-            header_value = struct.unpack('<IIIIQ', header)
+            if to_write < len(message):
+                self.data = message[to_write:]
 
-            if header_value[0] != MAGIC_NUMBER:
-                print("Bad header: " + str(header_value[0]))
-                self.tcp_disconnect()
-                continue
+        return self.NEED_DATA
 
-            code = header_value[1]
-            sz   = header_value[3]
+    def _parse_and_process_header(self):
 
-            if not self.active_flag:
-                self.active_flag = True
-                print("Connection is valid.")
-                self.state_change.emit()
+        """ self.data has at least 24 bytes in it - we can process the header now """
 
-            blob = None
-            if sz != 0:
-                blob = self.socket.recv(sz)
+        try:
+            header = self.data[:24]
+            magic, code, checksum, size, timestamp = struct.unpack('<IIIIQ', header)
+        except struct.error:
+            print("Invalid header format")
+            # error and disconnect
+            return self.PARSE_ERROR
 
-            if code == 1:
-                # heartbeat request, send a confirmation
-                self.send(2)
-                continue
+        if magic != MAGIC_NUMBER:
+            print(f"Bad header: {magic}")
+            # error and disconnect
+            return self.PARSE_ERROR
 
-            if code == 11:
-                # command
-                continue
+        if code == 113:
+            if len(self.data) < 24 + 32:
+                return True  # Wait for more data
+            return self.start_file(size - 32)
 
-            if code == 12:
-                # state
-                continue
+        if len(self.data) < 24 + size:
+            print("Waiting for full message")
+            return self.KEEP_PARSING  # Wait for more data
 
-            if code == 21:
-                self.recording_flag = True
-                print("Recording confirmed")
-                self.state_change.emit()
-                continue
+        blob = self.data[24:24 + size]
+        self.data = self.data[24 + size:]
 
-            if code == 23:
-                self.recording_flag = False
-                print("Stop confirmed")
-                self.state_change.emit()
-                continue
+        if code == 1:
+            self.send(2)  # Heartbeat response
+            # Continue parsing
+            return self.KEEP_PARSING
 
-            print(f"READ: {code} - {sz}")
+        elif code == 11:
+            # Command - ignored
+            return self.KEEP_PARSING
 
-        print("Peel Recorder TCP has finished")
+        elif code == 12:
+            # Property - ignored
+            return self.KEEP_PARSING
 
-    def recv_all(self, size):
-        data = b''
-        while len(data) < size:
-            try:
-                chunk = self.socket.recv(size - len(data))
-                if not chunk:
-                    # Connection closed by remote
-                    return None
-                data += chunk
-            except socket.timeout:
-                # Timeout while waiting for more data
-                # print("Timeout")
-                continue
-            except IOError as e:
-                # Some other socket error
-                print(f"Socket error while receiving: {e}")
-                return None
-        return data
+        elif code == 100:
+            print("Recording started")
+            self.recording = True
+            self.state_change.emit()
+            return self.KEEP_PARSING
+
+        elif code == 101:
+            print("Recording stopped")
+            self.recording = False
+            self.state_change.emit()
+            return self.KEEP_PARSING
+
+        elif code == 111:
+            print("Take list received")
+            self.file_list = json.loads(blob)
+            self.received_file_list.emit()
+            return self.KEEP_PARSING
+
+        print(f"Unknown code: {code}")
+        return self.PARSE_ERROR
+
+    def start_file(self, size):
+
+        if self.current_file is None:
+            print("No current file has been set")
+            return self.PARSE_ERROR
+
+        self.expected_hash = self.data[24:24+32]
+        self.file_size = size
+        self.file_received = 0
+        self.hash_calc = hashlib.sha256()
+        self.file_path = os.path.join(self.out_dir, self.current_file)
+
+        print(f"Transfer {self.file_path} size: {size}")
+        # print("Hash: " + ''.join(f'{b:02x}' for b in self.expected_hash))
+
+        try:
+            self.file_handle = open(self.file_path, 'wb')
+        except IOError as e:
+            print(f"Failed to open file for writing: {e}")
+            self.file_has_failed.emit(self.current_file)
+            self.file_handle = None
+
+        if len(self.data) > 24+32:
+            self.write_file(self.data[24+32:])
+
+        # Reset data for next loop
+        self.data = b''
+
+        if self.file_received >= self.file_size:
+            self.finish_file()
+        else:
+            self.expecting_file = True
+
+        return self.NEED_DATA
+
+    def write_file(self, file_data: bytes):
+
+        # If were not able to open the file, but must keep reading it so we can skip it
+
+        if self.file_handle is not None:
+            self.hash_calc.update(file_data)
+            self.file_handle.write(file_data)
+
+        self.file_received += len(file_data)
+        self.bytes_added.emit(len(file_data))
+
+    def finish_file(self):
+
+        if self.file_handle:
+            self.file_handle.close()
+
+        actual_hash = self.hash_calc.digest()
+
+        okay = actual_hash == self.expected_hash
+
+        # print("Hash A: " + ''.join(f'{b:02x}' for b in self.expected_hash))
+        # print("Hash B: " + ''.join(f'{b:02x}' for b in actual_hash))
+        # print("Okay  : " + str(okay))
+
+        # slot below may overwrite
+        current = self.current_file
+
+        self.expecting_file = False
+        self.expected_hash = None
+        self.hash_calc = hashlib.sha256()
+        self.file_handle = None
+        self.current_file = None
+
+        if okay:
+            # print(f"File received and verified successfully: {self.file_path}")
+            self.file_is_done.emit(current)
+        else:
+            print("Hash mismatch! File may be corrupted.")
+            self.file_has_failed.emit(current)
 
     def send(self, code, message=None):
 
-        if code > 2:
-            if code == 20:
-                print(f"SENDING: record:  {message}")
-            elif code == 22:
-                print(f"SENDING: stop")
+        if self.tcp.state() != QtNetwork.QAbstractSocket.ConnectedState:
+            print("TCP not connected. Attempting to reconnect...")
+            self.connect_tcp()
+            return
 
-            else:
-                print(f"SENDING {code} : {message}")
+        #if code > 2:
+        #    print(f"SENDING {code} : {message}")
 
-        if not self.socket:
+        if not self.tcp:
+            print("No connection while sending")
             return False
 
         try:
             if message is None or len(message) == 0:
-                self.socket.send(struct.pack("<IIIIQ", MAGIC_NUMBER, code, 0, 0, 0))
+                self.tcp.write(struct.pack("<IIIIQ", MAGIC_NUMBER, code, 0, 0, 0))
+                self.tcp.flush()
             else:
 
                 encoded = message.encode('utf-8')
-                self.socket.send(struct.pack("<IIIIQ", MAGIC_NUMBER, code, 0, len(encoded), 0))
-                self.socket.send(encoded)
+                self.tcp.write(struct.pack("<IIIIQ", MAGIC_NUMBER, code, 0, len(encoded), 0))
+                self.tcp.write(encoded)
+                self.tcp.flush()
+
+                print(f"{code} {encoded}")
         except IOError as e:
             print("Error Sending: " + str(e))
-            self.tcp_disconnect()
             return False
 
         return True
+
+
+class PeelRecordDownloadThread(DownloadThread):
+    def __init__(self, directory, parser: Parser):
+        super().__init__(directory)
+        self.parser = parser
+        self.parser.reset()
+        self.current_index = 0
+
+        parser.received_file_list.connect(self.got_file_list, QtCore.Qt.QueuedConnection)
+        parser.file_is_done.connect(self.got_file, QtCore.Qt.QueuedConnection)
+        parser.file_has_failed.connect(self.handle_file_failed, QtCore.Qt.QueuedConnection)
+        parser.bytes_added.connect(self.handle_bytes_added, QtCore.Qt.QueuedConnection)
+        self.directory = directory
+
+    def handle_bytes_added(self, sz):
+        self.add_bytes(sz)
+
+    def got_file_list(self):
+
+        device_files = self.parser.file_list["files"]
+
+        self.files = []
+        for file_item in device_files:
+            if self.download_take_check(os.path.splitext(file_item)[0]):
+                self.files.append(file_item)
+
+        print(f"{len(self.files)} files to download of {len(device_files)}")
+        if len(self.files) == 0:
+            print("No files on device")
+            self.set_finished()
+        else:
+            # Get started
+            self.current_index = 0
+            self.parser.get_file(self.files[0])
+
+    def got_file(self, name):
+        self.file_ok(name)
+        self.do_next()
+
+    def handle_file_failed(self, name):
+        self.file_fail(name, "")
+        self.do_next()
+
+    def do_next(self):
+        self.current_index += 1
+        if self.current_index == len(self.files):
+            self.set_finished()
+            return
+
+        self.parser.get_file(self.files[self.current_index])
+
+    def process(self):
+        # Called on a thread
+        print("Peel Recorder starting to download " + str(self.directory))
+        self.set_started()
+        self.parser.get_file_list(self.directory)
 
 
 class PeelRecorderWidget(SimpleDeviceWidget):
@@ -277,10 +392,59 @@ class PeelRecorder(PeelDeviceBase):
     """
 
     def __init__(self, name="PeelRecorder"):
-        super(PeelRecorder, self).__init__(name)
-        self.tcp = None
-        self.host = "127.0.0.1"
+        super().__init__(name)
+        self.host = None
         self.port = 4455
+        self.parser = None
+        self.running = False
+        self.udp_listener = udp.UdpBroadcastListener(self)
+        self.udp_listener.packet_received.connect(self.handle_udp_packet, QtCore.Qt.QueuedConnection)
+
+    def do_parser_disconnect(self):
+        print("Disconnected")
+
+    def do_parser_connect(self):
+        print("Connected")
+
+    def do_parser_state(self):
+        self.update_state()
+
+    def send_message(self, code, message):
+        self.parser.send(code, message)
+
+    def __str__(self):
+
+        if not self.enabled:
+            return ""
+
+        if self.parser is None:
+            return "Waiting"
+
+        if self.parser.error:
+            return self.parser.error
+
+        if self.parser.recording:
+            return "Recording"
+
+        return ""
+
+    def handle_udp_packet(self, message, host_ip, port):
+
+        if self.parser is not None:
+            return
+
+        self.connect_to_recorder(host_ip, int(message[11:]))
+
+    def connect_to_recorder(self, host, port):
+
+        print(f"Connecting to {host} {port}")
+
+        self.parser = Parser(self)
+        self.parser.connect_tcp(host, port)
+        self.parser.state_change.connect(self.do_parser_state, QtCore.Qt.QueuedConnection)
+        self.parser.state_disconnect.connect(self.do_parser_disconnect, QtCore.Qt.QueuedConnection)
+        self.parser.state_connect.connect(self.do_parser_connect, QtCore.Qt.QueuedConnection)
+        self.update_state()
 
     @staticmethod
     def device():
@@ -288,43 +452,32 @@ class PeelRecorder(PeelDeviceBase):
             Used to populate the add-device dropdown dialog and to serialize the class/type """
         return "peelrecorder"
 
-    def reconfigure(self, name, **kwargs):
+    def reconfigure(self, name,  **kwargs):
         self.name = name
-        self.host = kwargs.get("host")
-        self.port = kwargs.get("port")
+        self.host = kwargs.get("host", "")
+        self.port = kwargs.get("port", self.port)
         return True
 
     def connect_device(self):
         self.teardown()
-
-        if self.tcp is None:
-            self.tcp = SocketThread()
-            self.tcp.state_change.connect(self.thread_state_change)
-
-        self.tcp.tcp_start(self.host, self.port)
+        if not self.host:
+            self.udp_listener.start(7007) # hardcoded udp port for peel capture broadcast udp
+        else:
+            self.connect_to_recorder(self.host, self.port)
 
     def teardown(self):
         """ Shutdown gracefully """
-
-        if self.tcp:
-            self.tcp.tcp_disconnect()
-            self.tcp.stop_thread()
-            self.tcp.wait()
-            self.tcp = None
+        self.udp_listener.stop()
+        if self.parser:
+            self.parser.close_tcp()
 
     def as_dict(self):
         """ Return the parameters to the constructor as a dict, to be saved in the peelcap file """
-        return {'name': self.name, 'host': self.tcp.host, 'port': self.tcp.port}
-
-    def __str__(self):
-        return self.name
+        return {'name': self.name, 'host': self.host, 'port': self.port}
 
     def get_info(self, reason=None):
         """ return a string to show the state of the device in the main ui """
-        if self.tcp is None:
-            return ""
-        else:
-            return str(self.tcp)
+        return str(self)
 
     def get_state(self, reason=None):
         """ should return "OFFLINE", "ONLINE", "RECORDING" or "ERROR"
@@ -335,36 +488,33 @@ class PeelRecorder(PeelDeviceBase):
         if not self.enabled:
             return "OFFLINE"
 
-        if not self.tcp:
+        if not self.parser:
             return "OFFLINE"
 
-        if not self.tcp.active_flag:
-            return "OFFLINE"
-
-        if self.tcp.recording_flag:
+        if self.parser.recording:
             return "RECORDING"
 
-        return "ONLINE"
-
-    def thread_state_change(self):
-        """ Push a state change to the app """
-        self.update_state()
+        return self.parser.connected_state
 
     def command(self, command, argument):
         """ Respond to the app asking us to do something """
 
+        if not self.enabled:
+            return
+
         print("Peel Record Command: %s  Argument: %s" % (command, argument))
 
         if command == "record":
-            self.tcp.send(20, argument)
+            self.send_message(50, argument)
 
         if command == "stop":
-            self.tcp.send(22, argument)
+            self.send_message(51, argument)
 
     def thread_join(self):
         """ Called when the main app is shutting down - block till the thread is finished """
-        if self.tcp:
-            self.tcp.wait(10)
+        #if self.server:
+        #    self.server.wait(10)
+        pass
 
     @staticmethod
     def dialog_class():
@@ -372,11 +522,11 @@ class PeelRecorder(PeelDeviceBase):
 
     def has_harvest(self):
         """ Return true if harvesting (collecting files form the device) is supported """
-        return False
+        return True
 
     def harvest(self, directory):
         """ Copy all the take files from the device to directory """
-        pass
+        return PeelRecordDownloadThread(directory, self.parser)
 
     def list_takes(self):
         return []

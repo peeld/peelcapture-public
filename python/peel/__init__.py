@@ -45,6 +45,8 @@ import json
 DEVICES = DeviceCollection()
 SUBJECTS = {}
 SETTINGS = None
+HARVEST = None
+DIALOG_LOCK = False
 
 
 def startup():
@@ -235,7 +237,7 @@ class AddDeviceDialog(QtWidgets.QDialog):
         super().keyPressEvent(evt)
 
 
-DIALOG_LOCK = False
+
 
 
 def add_device():
@@ -361,14 +363,21 @@ def command(command, argument):
 
 def show_harvest():
     """ UI-ACTION: Copy the files from the devices to a local directory """
+
+    global HARVEST
+
+    if HARVEST:
+        HARVEST.close()
+        del HARVEST
+        HARVEST = None
+
     harvest_devices = [ d for d in DEVICES if d.has_harvest() ]
 
     if len(harvest_devices) == 0:
         QtWidgets.QMessageBox.warning(cmd.getMainWindow(), "Harvest", "No supported devices available")
         return
-    h = harvest.HarvestDialog(SETTINGS, harvest_devices, cmd.getMainWindow())
-    h.show()
-    # h.deleteLater()
+    HARVEST = harvest.HarvestDialog(SETTINGS, harvest_devices, cmd.getMainWindow())
+    HARVEST.show()
 
 
 def copy_selects():

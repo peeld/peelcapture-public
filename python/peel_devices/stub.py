@@ -166,12 +166,12 @@ class Stub(PeelDeviceBase):
         return "stub"
 
     def as_dict(self):
-        """ Return the paramters to the constructor as a dict, to be saved in the peelcap file """
+        """ Return the parameters to the constructor as a dict, to be saved in the peelcap file """
         return {'name': self.name}
 
     def reconfigure(self, name, **kwargs):
         """ Change the settings in the device. """
-        self.name = name
+        self.name = kwargs.get("name", "Stub")
         return True
 
     def connect_device(self):
@@ -218,6 +218,9 @@ class Stub(PeelDeviceBase):
     def command(self, command, argument):
         """ Respond to the app asking us to do something """
 
+        if not self.enabled:
+            return
+
         print("Stub Command: %s  Argument: %s" % (command, argument))
 
         if command == "record":
@@ -228,6 +231,12 @@ class Stub(PeelDeviceBase):
             self.takes.append(argument)
 
             cmd.setSubjects([f"Subject{n}" for n in range(random.randint(2, 5))])
+
+            cmd.setSubjects(["Jane", "Phil"])
+            cmd.setCharacters(["Fairy", "Goblin"])
+            cmd.setRigidbodies(["Prop1", "Prop2"])
+            cmd.setProps(["Sword", "Axe"])
+
 
         if command == "stop":
             print("Stopping stub")
