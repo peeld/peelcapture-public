@@ -31,6 +31,7 @@ from peel_devices import PeelDeviceBase, SimpleDeviceWidget, DownloadThread, Fil
 import json
 import re
 import traceback
+import socket
 from peel import file_util
 
 # http://192.168.15.151/descriptors
@@ -354,9 +355,12 @@ class KiPro(PeelDeviceBase):
         QtCore.QTimer.singleShot(500, self.update_state)
 
     def get_desc(self):
-        url = "http://" + self.host + "/desc.json"
-        with urllib.request.urlopen(url, timeout=1) as f:
-            self.desc = json.loads(f.read())
+        url = f"http://{self.host}/desc.json"
+        try:
+            with urllib.request.urlopen(url, timeout=1) as f:
+                self.desc = json.loads(f.read())
+        except (urllib.error.URLError, socket.timeout, json.JSONDecodeError):
+            self.desc = None
 
     def get_state(self, reason=None):
 
@@ -370,19 +374,18 @@ class KiPro(PeelDeviceBase):
         if self.downloading:
             return "OFFLINE"
 
+        transport = self.transport_state()
+        if transport is None:
+            self.message = "Disconnected"
+            return "OFFLINE"
+
+        cmd.writeLog(f"{self} transport: {transport}\n")
+
         state1 = self.alarm_state()
         state2 = self.alarm_state2()
         state3 = self.storage_state()
         if state1 != 0 or state2 != 0 or state3 != 0:
             return "ERROR"
-
-        transport = self.transport_state()
-
-        cmd.writeLog(f"{self} transport: {transport}\n")
-
-        if transport is None:
-            self.message = "Disconnected"
-            return "OFFLINE"
 
         if transport == "Recording":
             return "RECORDING"
