@@ -52,17 +52,17 @@ class AddWidget(BaseDeviceWidget):
         self.name_input.setText(device.name)
 
     def update_device(self, device):
-        device.name = self.name()
+        device.name = self.get_name()
         return True
 
-    def name(self):
+    def get_name(self):
         return self.name_input.text()
 
     def do_add(self):
         if not super().do_add():
             return False
 
-        self.settings.setValue("audioname", self.name())
+        self.settings.setValue("audioname", self.get_name())
         return True
 
 

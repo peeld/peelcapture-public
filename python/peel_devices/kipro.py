@@ -44,15 +44,12 @@ def format_take_name(name):
 class KiProDialog(SimpleDeviceWidget):
     def __init__(self, settings):
         super().__init__(settings, "KiPro", has_host=True, has_port=False,
-                         has_broadcast=False, has_listen_ip=False, has_listen_port=False)
+                         has_broadcast=False, has_listen_ip=False, has_listen_port=False,
+                         has_formatting=True, has_playback=True)
 
         link = "https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-ki-pro/"
         msg = '<P><A HREF="' + link + '">Documentation</A></P>'
         self.set_info(msg)
-
-        self.cb_prefix_device_name = QtWidgets.QCheckBox("")
-        self.form_layout.addRow("Prefix Device Name", self.cb_prefix_device_name)
-        self.cb_prefix_device_name.setChecked(settings.value(self.title + "PrefixDeviceName") == "True")
 
         self.cb_quad = QtWidgets.QCheckBox("")
         self.form_layout.addRow("Quad", self.cb_quad)
@@ -60,21 +57,16 @@ class KiProDialog(SimpleDeviceWidget):
 
     def populate_from_device(self, device):
         super().populate_from_device(device)
-        self.cb_prefix_device_name.setChecked(bool(device.prefix_device_name))
         self.cb_quad.setChecked(bool(device.quad))
 
     def update_device(self, device, data=None):
-        data = {
-            'prefix_device_name': self.cb_prefix_device_name.isChecked(),
-            'quad': self.cb_quad.isChecked()
-        }
+        data = { 'quad': self.cb_quad.isChecked() }
         return super().update_device(device, data)
 
     def do_add(self):
         if not super().do_add():
             return None
 
-        self.settings.setValue(self.title + "PrefixDeviceName", str(self.cb_prefix_device_name.isChecked()))
         self.settings.setValue(self.title + "Quad", str(self.cb_quad.isChecked()))
 
         return True
@@ -161,11 +153,10 @@ class Downloader:
 
 class KiProDownloadThread(DownloadThread):
 
-    def __init__(self, kipro, directory, quad, prefix):
-        super().__init__(directory)
+    def __init__(self, kipro, directory, quad, formatting):
+        super().__init__(directory, formatting)
         self.kipro = kipro
         self.quad = quad
-        self.prefix = prefix
         self.incomplete = None
         self.downloader = None
 
@@ -201,16 +192,13 @@ class KiProDownloadThread(DownloadThread):
         self.files = []
         for clip in self.kipro.clips():
             name = os.path.splitext(clip['clipname'])[0]
+            print(name)
 
             # remove any _1 _2 _3 or _4 suffix from the quad
             if self.quad:
                 name = re.sub(r'_(1|2|3|4)$', '', name)
 
             name = file_util.fix_name(name)
-
-            # remove the device name prefix
-            if self.prefix and name.startswith(file_util.fix_name(self.prefix)):
-                name = name[len(self.prefix):]
 
             if self.download_take_check(name):
                 self.files.append(FileItem(clip['clipname'], clip['clipname']))
@@ -315,26 +303,28 @@ class KiPro(PeelDeviceBase):
         self.message = None
         self.next_play = 0
         self.fp = None
-        self.prefix_device_name = False
         self.quad = False
         self.desc = None
+        self.playback = True
+        self.storage = None
 
     @staticmethod
     def device():
         return "kipro"
 
     def as_dict(self):
-        return {'name': self.name,
-                'host': self.host,
-                'prefix_device_name': self.prefix_device_name,
-                'quad': self.quad
-                }
+        ret = super().as_dict()
+        ret['host'] = self.host
+        ret['quad'] = self.quad
+        return ret
 
     def reconfigure(self, name, **kwargs):
-        self.name = name
+        if not super().reconfigure(name, **kwargs):
+            return False
         self.host = kwargs.get("host", None)
-        self.prefix_device_name = kwargs.get("prefix_device_name", False)
         self.quad = kwargs.get('quad', False)
+        if kwargs.get("prefix_device_name", False):
+            self.formatting.set_format("{device}_{take}")
         return True
 
     def __str__(self):
@@ -444,11 +434,21 @@ class KiPro(PeelDeviceBase):
         get_fields('eParamID_StorageAlarm', self.storage_state())
 
         if not errors:
-            return str(self.record_state())
+            msg = []
+            state = self.record_state()
+            if state:
+                msg.append(state)
+            avail = self.storage_available()
+            if avail:
+                msg.append(avail + "% avail")
+
+            return " ".join(msg)
         else:
             return " ".join(errors)
 
     def command(self, command, arg):
+
+        super().command(command, arg)
 
         """ PeelCapture has something for the ki pro to do """
 
@@ -459,46 +459,47 @@ class KiPro(PeelDeviceBase):
             return
 
         if command == "record":
-            if self.prefix_device_name:
-                name = self.name + "_" + arg
-            else:
-                name = arg
+
+            name = self.format_take(arg)
 
             if not self.clip_name(name):
                 cmd.writeLog(str(self) + " - Could not set clip name\n")
-                self.update_state("ERROR", "Name Error")
+                self.update_state("ERROR", self.error)
                 return
 
             if not self.record():
                 cmd.writeLog(str(self) + " - Could not record\n")
-                self.update_state("ERROR", "Record Error")
+                self.update_state("ERROR", self.error)
                 return
 
             self.query_state_delayed()
+            self.error = ""
             return
 
         if command == "stop":
             if self.stop():
                 self.query_state_delayed()
+                self.error = ""
             else:
                 cmd.writeLog(str(self) + " - Could not stop\n")
-                self.update_state("ERROR", "")
+                self.update_state("ERROR", self.error)
             return
 
         if command == "play":
             if arg is None or len(arg) == 0:
                 self.play()
             else:
-                self.play_clip(arg)
+                self.play_clip(self.format_take(arg))
 
             self.query_state_delayed()
-
+            self.error = ""
             return
 
         cmd.writeLog(f"{self} - ignored the command: {command} {arg}\n")
 
     def call(self, **params):
         if self.downloading:
+            print("Downloading")
             return
         try:
             url = "http://" + self.host + "/config?" + urllib.parse.urlencode(params)
@@ -552,6 +553,9 @@ class KiPro(PeelDeviceBase):
             return 0
         return int(ret)
 
+    def storage_available(self):
+        return self.get_param('eParamID_CurrentMediaAvailable')
+
     def clip_name(self, name):
         name = format_take_name(name)
         try:
@@ -600,6 +604,7 @@ class KiPro(PeelDeviceBase):
 
     def clips(self):
         if self.downloading:
+            print("Ki Pro is Downloading!")
             return
 
         # Fetch the clip list from the Ki Pro device
@@ -631,18 +636,22 @@ class KiPro(PeelDeviceBase):
 
             yield clip_dict
 
-    def play_clip(self, name):
+    def play_clip(self, clip_name):
 
         names = [i['clipname'] for i in self.clips()]
 
-        clip_name = format_take_name(name)
+        clip_name = file_util.fix_name(clip_name)
+
         found = []
         for i, each_clip in enumerate(names):
-            if format_take_name(each_clip).startswith(clip_name):
+            if file_util.fix_name(each_clip).startswith(clip_name):
                 found.append(i)
 
         if not found:
-            return
+            return False
+
+        for i in found:
+            print(f"Found:  {i} {names[i]}")
 
         current = self.get_param('eParamID_CurrentClip', "value")
         current_id = names.index(current)
@@ -675,10 +684,7 @@ class KiPro(PeelDeviceBase):
         return True
 
     def harvest(self, directory):
-        prefix = None
-        if self.prefix_device_name:
-            prefix = self.name + "_"
-        return KiProDownloadThread(self, directory, self.quad, prefix)
+        return KiProDownloadThread(self, directory, self.quad, self.formatting)
 
     @staticmethod
     def dialog_class():

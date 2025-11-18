@@ -70,10 +70,10 @@ private:
 	void messageCallback(int, const char*);
 
 	std::map<int, std::string> subjectDict;
-	std::map<int, std::string> propDict;
+	std::map<int, std::string> rigidbodyDict;
 
 	std::vector<std::string> mSubjectList;
-	std::vector<std::string> mPropList;
+	std::vector<std::string> mRigidbodyList;
 
 	int tc_h;
 	int tc_m;

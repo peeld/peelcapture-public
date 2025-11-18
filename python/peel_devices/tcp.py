@@ -126,7 +126,6 @@ def get_error_string(err):
 
 class TcpBase:
     def __init__(self, *args, **kwargs):
-        print("TCP BASE")
         super().__init__(*args, **kwargs)
         self.host = None
         self.port = None
@@ -136,7 +135,7 @@ class TcpBase:
         self.connect_timer = None
 
     def reconnect_timeout(self, interval):
-        self.connect_timer = QTimer()
+        self.connect_timer = QTimer(self)
         self.connect_timer.setSingleShot(False)
         self.connect_timer.timeout.connect(self.connect_tcp)
         self.connect_timer.setInterval(interval)
@@ -216,7 +215,6 @@ class TcpDevice(TcpBase, PeelDeviceBase):
     """ Base class to implement a device that connects using tcp to a remote server """
 
     def __init__(self, name, parent=None, *args, **kwargs):
-        print("TCPDEVICE")
         super().__init__(name, parent, *args, **kwargs)
         self.current_take = None
         self.device_state = None  # ONLINE, PLAYING, RECORDING
@@ -244,14 +242,18 @@ class TcpDevice(TcpBase, PeelDeviceBase):
         self.update_state(self.connected_state, get_error_string(err))
 
     def as_dict(self):
-        return {'name': self.name,
-                'host': self.host,
-                'port': self.port}
+        ret = super().as_dict()
+        ret['port'] = self.port
+        ret['host'] = self.host
+        return ret
 
     def teardown(self):
         super().close_tcp()
 
     def reconfigure(self, name, **kwargs):
+
+        if not super().reconfigure(name, **kwargs):
+            return False
 
         self.teardown()
 
@@ -261,7 +263,6 @@ class TcpDevice(TcpBase, PeelDeviceBase):
         self.current_take = None
         self.error = None
         self.connected_state = None
-        self.name = name
 
         return True
 
@@ -292,9 +293,6 @@ class TcpDevice(TcpBase, PeelDeviceBase):
 
     @staticmethod
     def dialog_class():
-        raise NotImplementedError
-
-    def command(self, command, argument):
         raise NotImplementedError
 
     def thread_join(self):

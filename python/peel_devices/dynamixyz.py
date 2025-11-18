@@ -43,7 +43,7 @@ class AddDxyzWidget(SimpleDeviceWidget):
 class Dynamixyz(XmlUdpDeviceBase):
 
     def __init__(self, name="Dynamxyz"):
-        super(Dynamixyz, self).__init__(name)
+        super(Dynamixyz, self).__init__(name, data_format="vicon")
 
     @staticmethod
     def device():

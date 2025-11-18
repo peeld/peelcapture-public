@@ -40,8 +40,8 @@ class AvataryWidget(SimpleDeviceWidget):
 
 class Avatary(XmlUdpDeviceBase):
 
-    def __init__(self, name="Avatary",):
-        super().__init__(name)
+    def __init__(self, name="Avatary"):
+        super().__init__(name, data_format="vicon")
 
         self.port = 6004
 

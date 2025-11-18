@@ -47,43 +47,43 @@ class MotiveDialog(BaseDeviceWidget):
 
         self.connection_type = QtWidgets.QComboBox()
         self.connection_type.addItems(["Multicast", "Unicast"])
-        self.connection_type.setCurrentText(settings.value("MotiveConnectionType"))
+        self.connection_type.setCurrentText(settings.value("MotiveConnectionType", "Multicast"))
         self.form_layout.addRow("Connection Type", self.connection_type)
 
         self.command_port = QtWidgets.QLineEdit()
-        self.command_port.setText(str(settings.value("MotiveCommandPort")))
+        self.command_port.setText(str(settings.value("MotiveCommandPort", 1510)))
         self.form_layout.addRow("Command Port", self.command_port)
 
         self.data_port = QtWidgets.QLineEdit()
-        self.data_port.setText(str(settings.value("MotiveDataPort")))
+        self.data_port.setText(str(settings.value("MotiveDataPort", 1511)))
         self.form_layout.addRow("Data Port", self.data_port)
 
         self.server_address = QtWidgets.QLineEdit()
-        self.server_address.setText(settings.value("MotiveServerAddress"))
+        self.server_address.setText(settings.value("MotiveServerAddress", "127.0.0.1"))
         self.form_layout.addRow("Server Address", self.server_address)
 
         self.local_address = QtWidgets.QLineEdit()
-        self.local_address.setText(settings.value("MotiveLocalAddress"))
+        self.local_address.setText(settings.value("MotiveLocalAddress", "127.0.0.1"))
         self.form_layout.addRow("Local Address", self.local_address)
 
         self.multicast_address = QtWidgets.QLineEdit()
-        self.multicast_address.setText(settings.value("MotiveMulticastAddress"))
+        self.multicast_address.setText(settings.value("MotiveMulticastAddress", "239.255.42.99"))
         self.form_layout.addRow("Multicast Address", self.multicast_address)
 
         self.timecode = QtWidgets.QCheckBox()
-        self.timecode.setChecked(self.settings.value("MotiveTimecode") == "True")
+        self.timecode.setChecked(self.settings.value("MotiveTimecode", "True") == "True")
         self.form_layout.addRow("Timecode", self.timecode)
 
         self.subjects = QtWidgets.QCheckBox()
-        self.subjects.setChecked(self.settings.value("MotiveSubjects") == "True")
+        self.subjects.setChecked(self.settings.value("MotiveSubjects", "True") == "True")
         self.form_layout.addRow("Subjects", self.subjects)
 
         self.transport = QtWidgets.QCheckBox()
-        self.transport.setChecked(self.settings.value("MotiveTransport") == "True")
+        self.transport.setChecked(self.settings.value("MotiveTransport", "True") == "True")
         self.form_layout.addRow("Playback", self.transport)
 
         self.set_capture_folder = QtWidgets.QCheckBox()
-        self.set_capture_folder.setChecked(self.settings.value("MotiveSetCaptureFolder") == "True")
+        self.set_capture_folder.setChecked(self.settings.value("MotiveSetCaptureFolder", "False") == "True")
         self.form_layout.addRow("Set Capture Folder", self.set_capture_folder)
 
         #link = "https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-optitrack-motive/"
@@ -149,6 +149,9 @@ class MotiveDialog(BaseDeviceWidget):
         self.settings.setValue("MotiveSetCaptureFolder", str(self.set_capture_folder.isChecked()))
 
         return True
+
+    def get_name(self) -> str:
+        return self.name.text()
 
 
 class OptitrackMotive(PeelDeviceBase):

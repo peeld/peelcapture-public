@@ -222,13 +222,13 @@ void ViconPlugin::run()
                     
                 }
 
-                if (propList != this->mProps)
+                if (propList != this->mRigidbodies)
                 {
-                    mProps = propList;
+                    mRigidbodies = propList;
                     std::vector<const char*> stringList;
-                    for (int i = 0; i < mProps.size(); i++) { stringList.push_back(mProps[i].c_str()); }
-                    if (stringList.size() == 0) { this->props(nullptr, 0); }
-                    else { this->props(&stringList[0], (int)stringList.size()); }
+                    for (int i = 0; i < mRigidbodies.size(); i++) { stringList.push_back(mRigidbodies[i].c_str()); }
+                    if (stringList.size() == 0) { this->rigidbodies(nullptr, 0); }
+                    else { this->rigidbodies(&stringList[0], (int)stringList.size()); }
                 }
             }
         }

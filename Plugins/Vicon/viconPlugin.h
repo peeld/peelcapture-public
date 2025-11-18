@@ -32,7 +32,7 @@ public:
     std::string host;
 
     std::vector< std::string > mSubjects;
-    std::vector< std::string > mProps;
+    std::vector< std::string > mRigidbodies;
 
     bool running;
     bool messageFlag;

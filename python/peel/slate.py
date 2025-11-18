@@ -209,10 +209,18 @@ class Slate(QtWidgets.QDialog):
         self.take.white()
 
     def set_text1(self, value):
-        self.label1.set_text(str(value))
+        if value:
+            self.label1.set_text(str(value))
+            self.label1.setVisible(True)
+        else:
+            self.label1.setVisible(False)
 
     def set_text2(self, value):
-        self.label2.set_text(str(value))
+        if value:
+            self.label2.set_text(str(value))
+            self.label2.setVisible(True)
+        else:
+            self.label2.setVisible(False)
 
     def set_timecode_enabled(self, value):
         self.timecode.setVisible(value)

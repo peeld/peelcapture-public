@@ -177,12 +177,13 @@ import os.path
 from ftplib import FTP
 import ftplib
 import re
-
+import os
 
 class AddHyperDeckWidget(SimpleDeviceWidget):
     def __init__(self, settings):
         super(AddHyperDeckWidget, self).__init__(settings, "Hyperdeck", has_host=True, has_port=True,
-                                                 has_broadcast=False, has_listen_ip=False, has_listen_port=False)
+                                                 has_broadcast=False, has_listen_ip=False, has_listen_port=False,
+                                                 has_formatting=True, has_playback=True)
 
         link = 'https://support.peeldev.com/peelcapture/peelcapture-devices/peelcapture-device-hyperdeck/'
         self.set_info('<P>Make sure remote commands are enabled on the device</P>'
@@ -191,11 +192,10 @@ class AddHyperDeckWidget(SimpleDeviceWidget):
 
 class HyperDeckDownloadThread(DownloadThread):
 
-    def __init__(self, deck, directory):
-        super(HyperDeckDownloadThread, self).__init__(directory)
+    def __init__(self, deck, directory, formatting):
+        super(HyperDeckDownloadThread, self).__init__(directory, formatting)
         self.deck = deck
         self.slots = []
-        self.fp = None
 
     def __str__(self):
         return str(self.deck) + " Downloader"
@@ -205,18 +205,16 @@ class HyperDeckDownloadThread(DownloadThread):
         self.slots.append(line[pos+1:])
 
     def add_file(self, line):
-
-        exp = re.compile(r'^[-rwxs]+\s+\d+\s+\w+\s+\w+\s+\d+\s+\w+\s+\d+\s+[\d:]+\s+(.*)$')
-        ret = exp.match(line)
-        if not ret:
-            cmd.writeLog("Skipping non file: " + line)
+        parts = line.split(maxsplit=8)  # split into at most 9 parts
+        if len(parts) < 9:
+            cmd.writeLog("Skipping non-file: " + line)
             return
 
-        file = ret.group(1)
+        file = parts[8]  # the 9th field = filename (can contain spaces intact)
 
         # Filter files for downloading
         if not self.download_take_check(os.path.splitext(file)[0]):
-            cmd.writeLog("Skipping: " + str(file) + " for mode: " + str(self.download_mode))
+            cmd.writeLog(f"Skipping: {file} for mode: {self.download_mode}")
             return
 
         self.files.append(file)
@@ -256,23 +254,23 @@ class HyperDeckDownloadThread(DownloadThread):
                 try:
 
                     self.current_size = 0
-
-                    def write(data):
-                        self.fp.write(data)
-                        self.add_bytes(len(data))
-
                     self.set_file_total_size(ftp.size(file))
 
-                    with open(local_file, 'wb') as self.fp:
+                    with open(local_file, 'wb') as fp:
+
+                        def write(data):
+                            fp.write(data)
+                            self.add_bytes(len(data))
+
                         ftp.retrbinary('RETR ' + file, write)
 
                     self.file_ok(this_file)
                 except IOError as e:
+                    if os.path.exists(local_file):
+                        os.remove(local_file)
                     self.file_fail(this_file, str(e))
                 except ftplib.all_errors as e:
                     self.file_fail(this_file, str(e))
-
-                self.fp = None
 
         else:
             self.set_current(len(self.files))
@@ -309,296 +307,370 @@ class HyperDeckDownloadThread(DownloadThread):
         self.set_finished()
 
 
+
 class HyperDeck(TcpDevice):
+    """
+    Hyperdeck Device
+    - Request dispatch (run_action / enqueue / advance)
+    - TCP input framing (do_read)
+    - Response parsing (parse_status_line / parse_multiline_block)
+    - Message interpretation (handle_message_code)
+
+    Multi-line messages follow HyperDeck protocol:
+        <code> <message>:
+            <line>
+            <line>
+        <blank line>
+    """
+
+    STATUS_RE = re.compile(r"^([0-9]{3}) (.*)")
+    CLIP_COUNT_RE = re.compile(r"^clip count: ([0-9]+)")
+    CLIP_ID_RE = re.compile(r"^([0-9]+):")
+    TIMECODE_RE = re.compile(r".*([0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2})$")
 
     def __init__(self, name="Hyperdeck", *args, **kwargs):
-        print("HYPERDECK")
         super().__init__(name, *args, **kwargs)
+
         self.host = "192.168.1.100"
         self.port = 9993
-        self.device_state = "OFFLINE"
 
-        self.current_take = None
+        # Device visible state
+        self.device_state = "OFFLINE"
         self.error = None
+        self.info = ""
+        self.resolution = None
+        self.record_time = None
+
+        # Playback / recording state
+        self.playback = True
+        self.current_take = None
         self.current_action = "init"
-        self.command_queue = None
-        self.response_state = None
-        self.line_state = None
-        self.play_clip = None
-        self.multi_line = False
-        self.lines = []
-        self.code = None
-        self.message = None
         self.speed = 100
+        self.play_clip = None
         self.clip_id = None
 
-    def do_update_state(self, state=None, info=None):
-        self.device_state = state
-        self.info = info
-        self.update_state(state, info)
+        # Protocol parsing state
+        self.code = None
+        self.message = None
+        self.lines = []
+        self.multi_line = False
 
-    def get_play_clip_id(self):
+        # Command queue
+        self.command_queue = None
 
-        ret = re.match(r"^clip count: ([0-9]+)", self.lines[0])
-        if not ret:
-            cmd.writeLog("Could not get clip count: " + str(self.lines[0]))
-            return False
+    # ----------------------------------------------------------------------
+    # Configuration / general overrides
+    # ----------------------------------------------------------------------
 
-        # clip_count = int(ret.group(1))
+    def reconfigure(self, name, **kwargs):
+        self.playback = kwargs.get("playback", True)
+        return super().reconfigure(name, **kwargs)
 
-        id_exp = re.compile(r"^([0-9]+):")
-        tc_exp = re.compile(r".*([0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2})$")
+    def as_dict(self):
+        ret = super().as_dict()
+        ret["playback"] = self.playback
+        return ret
 
-        cmd.writeLog("Searching for: " + self.play_clip)
+    # ----------------------------------------------------------------------
+    # Device state tracking
+    # ----------------------------------------------------------------------
 
-        for line in self.lines[1:]:
+    def do_update_state(self, state=None):
+        """Update device state & formatted info string."""
+        if state:
+            self.device_state = state
 
-            line = line.strip()
+        parts = []
+        if self.resolution:
+            parts.append(self.resolution)
 
-            id_result = id_exp.match(line)
-            if not id_result:
-                cmd.writeLog(line)
-                cmd.writeLog("Could not get id")
-                continue
-            take_id = id_result.group(1)
+        if self.record_time:
+            try:
+                t = int(self.record_time)
+                parts.append(f"{t//3600}:{(t%3600)//60}:{t%60} avail")
+            except ValueError:
+                print("Could not parse record_time:", self.record_time)
 
-            # remove the id from the line
-            line = line[len(take_id)+1:].strip()
-
-            # remove the last timecode from the line
-            tc_result = tc_exp.match(line)
-            if not tc_result:
-                cmd.writeLog(line)
-                cmd.writeLog("Could not parse timecode 1")
-
-            line = line[:-11].strip()
-
-            # remove the second last timecode from the line
-            tc_result = tc_exp.match(line)
-            if not tc_result:
-                cmd.writeLog(line)
-                cmd.writeLog("Could not parse timecode 2")
-
-            # What is left should be the take name (may have spaces in it)
-            line = line[:-11].strip()
-
-            # Remove the extension from the filename
-            clip_name = os.path.splitext(line)[0]
-
-            if clip_name == self.play_clip:
-                cmd.writeLog(f"Using id: {take_id}" )
-                return take_id
-
-    def do_read(self):
-        data = self.tcp.readAll().data().decode("utf8")
-        # print(data)
-        for line in data.split("\n"):
-
-            line = line.strip()
-
-            if self.multi_line:
-                # keep reading lines of a multi line command until we get to a blank line
-                if not line:
-                    self.multi_line = False
-                    self.read_message()
-                    continue
-                else:
-                    self.lines.append(line)
-                    continue
-
-            if not line:
-                continue
-
-            ret = re.match(r"^([0-9]{3}) (.*)", line)
-            if not ret:
-                cmd.writeLog("Could not parse: " + line)
-                continue
-
-            self.lines = []
-            self.code = ret.group(1)
-            self.message = ret.group(2)
-
-            if line.endswith(':'):
-                self.multi_line = True
-                continue
-
-            self.read_message()
-
-    def set_offline(self):
-        self.do_update_state("OFFLINE", "")
+        self.info = " ".join(parts)
+        self.update_state(self.device_state, self.info)
 
     def set_error(self, msg):
-        self.do_update_state("OFFLINE", msg)
+        self.error = msg
+        self.update_state("ERROR", msg)
 
-    def post_stop(self):
-        self.send('preview: enable: true\n')
+    def set_offline(self):
+        self.do_update_state("OFFLINE")
 
-    def post_play_loop(self):
-        self.current_action = "play-starting"
-        self.send("play\n")
+    def get_info(self, reason=None):
+        if reason == "refresh":
+            self.enqueue("info")
+        return self.error if self.device_state == "ERROR" else self.info
+
+    # ----------------------------------------------------------------------
+    # TCP Reading + Parsing
+    # ----------------------------------------------------------------------
+
+    def do_read(self):
+        """Read raw TCP bytes, split into lines, classify, collect."""
+        data = self.tcp.readAll().data().decode("utf8", errors="replace")
+
+        for raw in data.split("\n"):
+            line = raw.strip()
+
+            # --- End of multiline block ---
+            if not line:
+                if self.multi_line:
+                    self.multi_line = False
+                    self.read_message()
+                    self.lines.clear()
+                    self.advance()
+                continue
+
+            # --- Status line: "205 Something" ---
+            m = self.STATUS_RE.match(line)
+            if m:
+                self._start_new_message(m.group(1), m.group(2))
+                continue
+
+            # --- Multi-line content ---
+            if self.multi_line:
+                self.lines.append(line)
+            else:
+                cmd.writeLog("Unparsed line: " + line)
+
+    def _start_new_message(self, code, message):
+        """Begin new message block."""
+
+        self.code = code
+        self.message = message
+        self.lines.clear()
+
+        if message.endswith(":"):
+            # multi-line block begins, wait for blank line to finish
+            self.multi_line = True
+            return
+        else:
+            # single-line message – safe to handle immediately
+            self.read_message()
+            self.advance()
+            return
+
+    # ----------------------------------------------------------------------
+    # Message Handling
+    # ----------------------------------------------------------------------
 
     def read_message(self):
+        """Interpret status code + lines."""
+        code = int(self.code)
+        self.code = None  # reset
 
-        """ Interpret the message and error code for status """
+        # --- Standard HyperDeck code handlers ---
+        if 100 <= code < 199:
+            cmd.writeLog(f"HyperDeck protocol error during {self.current_action}: {self.message}")
+            self.set_error(self.message)
+            return
 
-        int_code = int(self.code)
+        if code == 201:  # busy
+            self.error = "busy"
+            self.do_update_state()
+            return
 
-        if 100 <= int_code < 199:
-            cmd.writeLog("Hyperdeck Error, state was: " + str(self.current_action))
-            cmd.writeLog(self.message)
-            self.do_update_state("ERROR", self.message)
-            return True
+        if code == 202:  # recording time
+            for line in self.lines:
+                if line.startswith("recording time:"):
+                    self.record_time = line[15:].strip()
+            self.do_update_state()
+            return
 
-        if self.code == "500" or self.code == "200":
+        if code == 208:  # input video format
+            for line in self.lines:
+                if line.startswith("input video format:"):
+                    self.resolution = line[19:].strip()
+            self.do_update_state()
+            return
+
+        if code == 209:
+            self.set_error("No Media")
+            return
+
+        if code == 502:
+            self.set_error("Bad Command")
+            return
+
+        # Successful standard command (200 or 500)
+        if code in (200, 500):
+            self.error = None
             if self.current_action == "record":
-                self.do_update_state("RECORDING", "")
-                self.advance()
+                self.do_update_state("RECORDING")
                 return
-
             if self.current_action == "play":
-                self.do_update_state("PLAYING", "Playing")
-                self.advance()
+                self.do_update_state("PLAYING")
                 return
-
-            self.do_update_state("ONLINE", "")
-            self.advance()
+            self.do_update_state("ONLINE")
             return
 
-        #if self.command_state == "play":
-        #    if self.code == "205" and len(self.lines) > 0:
-        #        self.advance()
-        #    else:
-        #        self.do_update_state("ERROR", "Error playing")
-        #    return
+        # Special ls completion
+        if code == 205 and self.current_action == "ls":
 
-        if self.code == "205" and self.current_action == "ls":
-            self.advance()
+            self.clip_id = self.get_play_clip_id()
+
+            if self.clip_id is None:
+                self.set_error("Clip not found")
+                self.command_queue = None
             return
 
-        self.do_update_state("ERROR", self.current_action)
+        # Unknown
+        cmd.writeLog(f"Unknown HyperDeck response: {self.current_action} - {code} {self.message}")
 
-        cmd.writeLog(f"{self.current_action} - {self.code} {self.message}")
-        #for i in self.lines:
-        #    print("  " + i)
+    # ----------------------------------------------------------------------
+    # Clip listing / parsing
+    # ----------------------------------------------------------------------
+
+    def get_play_clip_id(self):
+        """Parse a clip ID by matching clip name."""
+        if not self.lines:
+            cmd.writeLog("No lines for clip parsing")
+            return None
+
+        # First line: clip count
+        if not self.CLIP_COUNT_RE.match(self.lines[0]):
+            cmd.writeLog("Could not parse clip count: " + self.lines[0])
+            return None
+
+        cmd.writeLog(f"Searching for clip name: {self.play_clip}")
+
+        for line in map(str.strip, self.lines[1:]):
+            id_match = self.CLIP_ID_RE.match(line)
+            if not id_match:
+                continue
+
+            take_id = id_match.group(1)
+            rest = line[len(take_id) + 1:].strip()
+
+            # remove last TC
+            tc1 = self.TIMECODE_RE.match(rest)
+            if not tc1:
+                continue
+            rest = rest[:-11].strip()
+
+            # remove 2nd TC
+            tc2 = self.TIMECODE_RE.match(rest)
+            if not tc2:
+                continue
+            rest = rest[:-11].strip()
+
+            clip_name = os.path.splitext(rest)[0]
+            if clip_name == self.play_clip:
+                cmd.writeLog(f"Found clip id = {take_id}")
+                return take_id
+
+        return None
+
+    # ----------------------------------------------------------------------
+    # Command Queue Management
+    # ----------------------------------------------------------------------
 
     def enqueue(self, commands):
+        """Run immediately (str) or queue a sequence (list)."""
         if isinstance(commands, str):
-            # Single command, no queue needed just run it
             self.command_queue = None
             self.run_action(commands)
             return
 
-        # queue a set of commands.
-        self.command_queue = commands
-        self.run_action(self.command_queue.pop())
+        self.command_queue = list(commands)
+        cmd.writeLog("COMMAND QUEUE: " + str(self.command_queue))
+        self.run_action(self.command_queue.pop(0))
 
     def advance(self):
-
-        if self.current_action is None:
+        """Continue queued command sequence."""
+        if not self.current_action:
             return
 
-        if self.current_action == "ls":
-            self.clip_id = self.get_play_clip_id()
-            if self.clip_id is None:
-                self.do_update_state("ERROR", "Could not find clip")
-                return
-
-        # Send the next command in the queue
         if self.command_queue:
             self.run_action(self.command_queue.pop(0))
 
+    # ----------------------------------------------------------------------
+    # Command Execution (outbound)
+    # ----------------------------------------------------------------------
+
     def run_action(self, action):
-        cmd.writeLog(f"Hyperdeck action: {action}")
+        """Map logical action to actual HyperDeck protocol strings."""
+        cmd.writeLog(f">>> Action: {action}")
         self.current_action = action
+
         if action == "record":
             self.send(f"record: name: {self.current_take}\n")
-            return
 
-        if action == "stop":
+        elif action == "stop":
             self.send("stop\n")
-            return
 
-        if action == "preview-enable":
+        elif action == "preview-enable":
             self.send("preview: enable: true\n")
-            return
 
-        if action == "ls":
+        elif action == "ls":
             self.send("clips get\n")
-            return
 
-        if action == "set-clip":
+        elif action == "set-clip":
             self.send(f"playrange set: clip id: {self.clip_id}\n")
-            return
 
-        if action == "goto-start":
+        elif action == "goto-start":
             self.send("goto: clip: start\n")
-            return
 
-        if action == "goto-end":
+        elif action == "goto-end":
             self.send("goto: clip: end\n")
-            return
 
-        if action == "play":
+        elif action == "play":
             self.send(f"play: loop: true speed: {self.speed}\n")
-            return
+
+        elif action in ("transport info", "slot info"):
+            self.send(action + "\n")
+
+    # ----------------------------------------------------------------------
+    # Public Command Interface
+    # ----------------------------------------------------------------------
 
     def command(self, command, arg):
-
-        if command in ["shotName", "takeNumber", "takeName", "set_data_directory", "takeId", 'recording-ok']:
-            return None
-
+        super().command(command, arg)
         self.current_action = command
 
-        # The commands being cued here are actions not literal strings to be sent
-        # They are intepreted by send_line, with additional encoding or parameters if needed.
+        if command in ["shotName", "takeNumber", "takeName",
+                       "set_data_directory", "takeId", "recording-ok"]:
+            return
 
         if command == "record":
-            self.current_take = arg
-            self.enqueue("record")
+            self.current_take = self.format_take(arg)
+            self.enqueue(["transport info", "slot info", "record"])
             return
 
         if command == "stop":
             self.play_clip = None
-            self.enqueue(["stop", "preview-enable"])
+            self.enqueue(["stop", "preview-enable", "transport info", "slot info"])
             return
 
-        if command == "play":
-            self.play_clip = arg
+        if command == "play" and self.playback:
+            self.play_clip = self.format_take(arg)
             self.speed = 100
             self.enqueue(["ls", "set-clip", "goto-start", "play"])
-            return None
+            return
 
         if command == "pause":
-
-            if arg == "on":
-                self.speed = 0
-
-            if arg == "off":
-                self.speed = 100
-
+            self.speed = 0 if arg == "on" else 100
             self.enqueue("play")
-
             return
 
         if command == "move":
-            speed_value = int(arg)
-            if speed_value < 0:
-                self.speed = speed_value * 50
-            if speed_value == 0:
-                self.speed = 100
-            if speed_value > 0:
-                self.speed = (speed_value + 1) * 50
+            v = int(arg)
+            self.speed = 100 if v == 0 else (v + 1) * 50 if v > 0 else v * 50
             self.enqueue("play")
             return
 
         if command == "goto":
-            if arg == "start":
-                self.enqueue("goto-start")
-            if arg == "end":
-                self.enqueue("goto-end")
+            self.enqueue("goto-start" if arg == "start" else "goto-end")
             return
 
-        cmd.writeLog(f"{self.name} ignored the command: {command} {arg}")
+        cmd.writeLog(f"{self.name} ignored command: {command} {arg}")
+
+    # ----------------------------------------------------------------------
 
     @staticmethod
     def device():
@@ -612,4 +684,4 @@ class HyperDeck(TcpDevice):
         return True
 
     def harvest(self, directory):
-        return HyperDeckDownloadThread(self, directory)
+        return HyperDeckDownloadThread(self, directory, self.formatting)

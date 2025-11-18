@@ -75,10 +75,15 @@ class UDPListenerTCPConnector:
         try:
             tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             tcp_sock.connect((ip_address, self.port))
+            tcp_sock.settimeout(3.0)
             print(f"[TCP] Connected to {ip_address}:{self.port}")
+
 
             with self.sockets_lock:
                 self.tcp_sockets.append(tcp_sock)
+
+            # Info ui update
+            self.device.update_state()
 
             threading.Thread(target=self._handle_tcp_connection, args=(tcp_sock, ip_address), daemon=True).start()
 
@@ -87,36 +92,38 @@ class UDPListenerTCPConnector:
             with self.connected_ips_lock:
                 self.connected_ips.discard(ip_address)
 
+    def _tcp_read(self, tcp_sock, sz):
+        buffer = b''
+        while len(buffer) < sz:
+            chunk = tcp_sock.recv(sz - len(buffer))
+            if not chunk:
+                return None
+            buffer += chunk
+        return buffer
+
     def _handle_tcp_connection(self, tcp_sock, ip_address):
         try:
             with tcp_sock:
-                buffer = b''
                 while self.running:
                     # Ensure at least 2 bytes for size
-                    while len(buffer) < 2:
-                        chunk = tcp_sock.recv(2 - len(buffer))
-                        if not chunk:
-                            print("[TCP] Connection closed while waiting for size header.")
-                            return
-                        buffer += chunk
+
+                    buffer = self._tcp_read(tcp_sock, 2)
+                    if buffer is None:
+                        return
 
                     # Get message size
                     msg_size = int.from_bytes(buffer[:2], byteorder='little')
-                    buffer = buffer[2:]
 
-                    # Read full message
-                    while len(buffer) < msg_size:
-                        chunk = tcp_sock.recv(msg_size - len(buffer))
-                        if not chunk:
-                            print("[TCP] Connection closed while receiving message.")
-                            return
-                        buffer += chunk
+                    if msg_size == 0:
+                        # heartbeat, can be ignored.
+                        continue
 
-                    message = buffer[:msg_size]
-                    buffer = buffer[msg_size:]
+                    buffer = self._tcp_read(tcp_sock, msg_size)
+                    if buffer is None:
+                        return
 
                     # Handle the complete message
-                    self._handle_incoming_payload(message, ip_address)
+                    self._handle_incoming_payload(buffer, ip_address)
 
         except Exception as e:
             print(f"[TCP] Connection to {ip_address} error: {e}")
@@ -127,6 +134,8 @@ class UDPListenerTCPConnector:
             with self.connected_ips_lock:
                 self.connected_ips.discard(ip_address)
             print(f"[TCP] Disconnected from {ip_address}")
+            self.device.update_state()
+
 
     def _handle_incoming_payload(self, data: bytes, ip_address: str):
         """Process the complete payload received from a TCP peer."""
@@ -134,14 +143,17 @@ class UDPListenerTCPConnector:
             print(f"[TCP] Received {len(data)} bytes from {ip_address}: {data}")
 
             if data == b"RECORDING_STARTED":
+                # Record Okay
                 self.device.set_recording(True)
                 return
 
-            if data == b"RECORDING_ERROR":
+            if data == b"RECORDING_FAILED":
+                # Error
                 self.device.set_recording(False)
                 return
 
             if data == b"STOPPED":
+                # Stop Recording (none)
                 self.device.set_recording(None)
                 return
 
@@ -153,7 +165,7 @@ class UDPListenerTCPConnector:
 
                     char, actor = binding.split('|')
                     chars.append(char)
-                    cmd.setBinding(actor, char)
+                    cmd.setBinding(actor, char, False)
 
                 cmd.setCharacters(chars)
 
@@ -163,7 +175,7 @@ class UDPListenerTCPConnector:
                     if '|' not in item:
                         continue
 
-                    char, value = binding.split('|')
+                    char, value = item.split('|')
                     chars.append(char)
                     cmd.setPerformerVisibility()
 
@@ -189,18 +201,17 @@ class UDPListenerTCPConnector:
         size_header = len(payload).to_bytes(2, byteorder='little')
         full_message = size_header + payload
 
-        with self.sockets_lock:
-            for sock in self.tcp_sockets[:]:  # Use a copy in case of removal
-                try:
-                    sock.sendall(full_message)
-                    print(f"[TCP] Sent message to {sock.getpeername()}")
-                except Exception as e:
-                    print(f"[TCP] Send failed to {sock.getpeername()}: {e}")
-                    self.tcp_sockets.remove(sock)
-                    try:
-                        sock.close()
-                    except:
-                        pass
+        dead = []
+        for sock in self.tcp_sockets:
+            try:
+                sock.sendall(full_message)
+            except:
+                dead.append(sock)
+
+        for sock in dead:
+            sock.close()
+            self.tcp_sockets.remove(sock)
+
 
 
 class UnrealWidget(SimpleDeviceWidget):
@@ -211,10 +222,7 @@ class UnrealWidget(SimpleDeviceWidget):
 
 class Unreal(PeelDeviceBase):
 
-    """ This device tests device functionality by running a thread when the device is in record mode
-    The thread may run for 5 seconds and cause a failure state, or it may wait for a stop command.
-    The thread and the device will both output some text to the log.
-    """
+    """ Connects to the Peel Core plugin in unreal. """
 
     def __init__(self, name="Unreal"):
         super().__init__(name)
@@ -238,7 +246,7 @@ class Unreal(PeelDeviceBase):
 
     def reconfigure(self, name, **kwargs):
         """ Change the settings in the device. """
-        self.name = kwargs.get("name", "Unreal")
+        self.name = name
         self.port = kwargs.get("port", "9159")
         if self.port is None:
             self.port = 9159
@@ -258,7 +266,7 @@ class Unreal(PeelDeviceBase):
 
     def get_info(self, reason=None):
         """ return a string to show the state of the device in the main ui """
-        return str(self.server.connection_count())
+        return str(f"Connections: {self.server.connection_count()}")
 
     def get_state(self, reason=None):
         """ should return "OFFLINE", "ONLINE", "RECORDING" or "ERROR"
@@ -285,8 +293,6 @@ class Unreal(PeelDeviceBase):
 
         if not self.enabled:
             return
-
-        print("Stub Command: %s  Argument: %s" % (command, argument))
 
         if command == "takeNumber":
             self.server.send_to_all(f"TAKE={argument}")

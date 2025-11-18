@@ -48,8 +48,6 @@ class Pi(TcpDevice):
     def command(self, command, argument):
         """ Respond to the app asking us to do something """
 
-        print("Stub Command: %s  Argument: %s" % (command, argument))
-
         if command == "record":
             self.send("RECORD " + str(argument))
 

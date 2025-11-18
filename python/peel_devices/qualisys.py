@@ -91,6 +91,9 @@ class QualisysDeviceDialog(BaseDeviceWidget):
 
         return True
 
+    def get_name(self) -> str:
+        return self.name.text()
+
 
 class QualisysDevice(PeelDeviceBase):
 

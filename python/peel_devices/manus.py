@@ -11,7 +11,7 @@ class ManusWidget(SimpleDeviceWidget):
 class Manus(XmlUdpDeviceBase):
 
     def __init__(self, name="Manus"):
-        super(Manus, self).__init__(name)
+        super(Manus, self).__init__(name, data_format="manus")
 
     @staticmethod
     def device():

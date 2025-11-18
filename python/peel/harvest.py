@@ -185,8 +185,8 @@ class HarvestDialog(QtWidgets.QDialog):
 
         self.all_files = QtWidgets.QComboBox()
 
-        self.all_files.addItem("All Files", None)
         self.all_files.addItem("Matching", None)
+        self.all_files.addItem("All", None)
         self.all_files.addItem("Last Take", None)
         self.all_files.addItem("Selected", None)
 
@@ -277,7 +277,7 @@ class HarvestDialog(QtWidgets.QDialog):
             self.workers = []
             return
 
-        # lets start
+        # let's start
 
         self.workers = []
 
@@ -305,7 +305,6 @@ class HarvestDialog(QtWidgets.QDialog):
         self.update_gui()
 
         # Start workers
-        print("Starting work (threaded)")
         self.start_processing.emit()
 
     def make_worker(self, device_id: int):
@@ -327,8 +326,6 @@ class HarvestDialog(QtWidgets.QDialog):
 
         worker.set_match_mode(self.match_mode.currentText())
 
-        print("----------------------")
-        print(self.selects_folders.isChecked())
         worker.set_create_selects_folders(self.selects_folders.isChecked())
 
         worker.device_id = device_id
@@ -336,9 +333,7 @@ class HarvestDialog(QtWidgets.QDialog):
         worker.all_done.connect(self.all_done, QtCore.Qt.QueuedConnection)
         worker.message.connect(self.log_message, QtCore.Qt.QueuedConnection)
         self.start_processing.connect(worker.process)
-
         self.workers.append(worker)
-
         worker.moveToThread(self.threads[device_id])
 
     def update_gui(self):
@@ -354,6 +349,11 @@ class HarvestDialog(QtWidgets.QDialog):
             self.go_button.setText("Get Files")
 
     def do_update(self):
+
+        # Tick update to check status of the worker threads
+
+        if not self.workers:
+            return
 
         if self.is_done():
             self.update_timer.stop()
@@ -379,11 +379,6 @@ class HarvestDialog(QtWidgets.QDialog):
                 item.setText(2, str(file))
             else:
                 item.setText(2, "")
-
-#            if bandwidth:
-#                item.setText(3, str(bandwidth))
-#            else:
-#                item.setText(3, "")
 
             brush = QtGui.QBrush()
             fg = QtGui.QColor(255, 255, 255)
@@ -427,6 +422,7 @@ class HarvestDialog(QtWidgets.QDialog):
         return True
 
     def file_done(self, name, copy_state, error):
+        # A file has fininshed being copied by a thread
         if copy_state == DownloadThread.COPY_OK:
             self.log.appendPlainText("COPIED: " + name)
             self.total_copied += 1
@@ -438,8 +434,9 @@ class HarvestDialog(QtWidgets.QDialog):
             self.total_failed += 1
 
     def all_done(self):
-        device = self.sender()
-        index = self.workers.index(device)
+        pass
+        #device = self.sender()
+        #index = self.workers.index(device)
 
     def sender_device_id(self):
         ref = self.sender()

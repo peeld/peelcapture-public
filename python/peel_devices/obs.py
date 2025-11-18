@@ -91,8 +91,6 @@ class ObsDeviceDialog(BaseDeviceWidget):
     def set_folder_state(self, _):
         self.directory_name.setEnabled(self.set_folder.isChecked())
 
-
-
     def populate_from_device(self, device):
         # populate the gui using data in the device
         self.name.setText(device.name)
@@ -138,6 +136,9 @@ class ObsDeviceDialog(BaseDeviceWidget):
         self.settings.setValue("ObsTakeFormat", self.take_format.text())
 
         return True
+
+    def get_name(self) -> str:
+        return self.name.text()
 
 
 class ObsDevice(PeelDeviceBase):

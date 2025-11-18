@@ -37,7 +37,7 @@ class StubDownloadThread(DownloadThread):
     """ Simulates a download operation """
 
     def __init__(self, stub, directory, takes=None):
-        super(DownloadThread, self).__init__(directory)
+        super().__init__(directory)
         self.takes = takes
         self.stub = stub
         self.clips = ["clip_%d" % i for i in range(10)]
@@ -171,7 +171,7 @@ class Stub(PeelDeviceBase):
 
     def reconfigure(self, name, **kwargs):
         """ Change the settings in the device. """
-        self.name = kwargs.get("name", "Stub")
+        self.name = name
         return True
 
     def connect_device(self):

@@ -103,6 +103,9 @@ class AddWidget(BaseDeviceWidget):
 
         return True
 
+    def get_name(self) -> str:
+        return "Blade"
+
 
 class ListenThread(QtCore.QThread):
     """ This is the listener thread that blade will connect to us on.  It is possible

@@ -257,7 +257,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
         if command in ["play", "takeNumber", "takeName", "shotName", "shotTag", "takeId", "set_data_directory"]:
             return None
 
-        print(f"{self.name} ignored the command: {command} {arg}")
+        # print(f"{self.name} ignored the command: {command} {arg}")
 
     def capture_stop(self):
 
@@ -314,6 +314,16 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
                     '    <PacketID VALUE="%d"/>\n' % self.packet_id + \
                     '</CaptureStop>\n'
 
+        elif self.format == "Manus":
+
+            msg = '<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n'
+            msg += '<CaptureStop>\n'
+            msg += f'<Name VALUE="{self.current_take}" />\n'
+            if self.set_capture_folder:
+                msg += '<DatabasePath VALUE="' + self.data_directory() + '" />\n'
+            msg += '</CaptureStop>\n'
+
+
         else:
             msg = '<?xml version="1.0" encoding="utf-8" ?>\n' \
                 + '<CaptureStop>\n' \
@@ -326,9 +336,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
 
         self.current_take = take
 
-        print(f"START {self.format}")
-
-        if self.format == "Blade":
+        if self.format.lower() == "blade":
             msg = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>' + \
                   '<CaptureStart><Name VALUE="%s"/>' % self.current_take + \
                   '<Notes VALUE=""/>' + \
@@ -338,7 +346,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
                   '<PacketID VALUE="%d"/>' % self.packet_id + \
                   '</CaptureStart>\0'
 
-        elif self.format == "Vicon":
+        elif self.format.lower() == "vicon":
             # https://docs.vicon.com/pages/viewpage.action?pageId=107479581
             msg = '<CaptureStart>\n' + \
                     '    <Name VALUE="%s"/>\n' % self.current_take + \
@@ -348,7 +356,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
                     '    <PacketID VALUE="%d"/>\n' % self.packet_id + \
                     '</CaptureStart>\n'
 
-        elif self.format == "Optitrack":
+        elif self.format.lower() == "optitrack":
             # https://v22.wiki.optitrack.com/index.php?title=Data_Streaming
             msg = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>' + \
                   '<CaptureStart>' + \
@@ -356,7 +364,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
                   '<TimeCode VALUE="%s"/>' % cmd.getTimecode() + \
                   '</CaptureStart>'
 
-        elif self.format == 'XSENS':
+        elif self.format.lower() == 'xsens':
             # https://base.xsens.com/s/article/UDP-Remote-Control?language=en_US
             msg = '<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n'
             msg += '<StartRecordingReq'
@@ -368,7 +376,7 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
             msg += f' Description="{self.description}"'
             msg += ' />\n'
 
-        elif self.format == "Rokoko":
+        elif self.format.lower() == "rokoko":
             # https://github.com/Rokoko/studio-command-api-examples/blob/master/README.md#trigger-messages
             msg = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>' \
                 + '<CaptureStart>' \
@@ -378,16 +386,26 @@ class XmlUdpDeviceBase(peel_devices.PeelDeviceBase):
                 + '<ProcessID VALUE="22236"/>' \
                 + '</CaptureStart>'
 
-        elif self.format == "Nansense":
+        elif self.format.lower() == "nansense":
             msg = '<CaptureStart>' \
                 + '<Name VALUE="%s" />' % self.current_take \
                 + '</CaptureStart>'
 
-        elif self.format == "HOLOSYS":
+        elif self.format.lower() == "holosys":
             msg = '<CaptureStart>\n' + \
                     '    <Name VALUE="%s"/>\n' % self.current_take + \
                     '    <PacketID VALUE="%d"/>\n' % self.packet_id + \
                     '</CaptureStart>\n'
+
+        elif self.format.lower() == "manus":
+            msg = '<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n'
+            msg += '<CaptureStart>\n'
+            msg += f'<Name VALUE="{self.current_take}" />\n'
+            if self.set_capture_folder:
+                msg += '<DatabasePath VALUE="' + self.data_directory() + '" />\n'
+
+            msg += '</CaptureStart>\n'
+
         else:
             msg = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n' \
                 + '<CaptureStart>\n' \
@@ -440,7 +458,7 @@ class AddXmlUdpWidget(peel_devices.SimpleDeviceWidget):
         self.form_layout.addRow("Listen", self.enable_listen)
 
         self.format_mode = QtWidgets.QComboBox()
-        self.format_mode.addItems(["Vicon", "Optitrack", "XSENS", "Blade", "Rokoko", "Nansense", "HOLOSYS"])
+        self.format_mode.addItems(["Vicon", "Optitrack", "Xsens", "Blade", "Rokoko", "Nansense", "Holosys", "Manus"])
         self.format_mode.setCurrentText(settings.value(self.title + "Format", "Vicon"))
         self.form_layout.addRow("Format", self.format_mode)
 

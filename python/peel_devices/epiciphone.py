@@ -94,19 +94,21 @@ from PySide6 import QtWidgets, QtCore
 import threading, socket, struct
 import os
 import os.path
+import array
 from . import device_util
 from PeelApp import cmd
 
 
 def get_format(args, name, take_number):
-    print("GET: " + str(name) + " " + str(take_number))
+    # Prepare the generic name for the take file names, for guessing files that did not respond
+    # Uses the known take name and take number (int) to generate a pattern that can be used for
+    # files that did not respond to the record command but still generated a file
     ret = []
     for arg in args:
         fixed = arg.replace(name, "#name#")
         fixed = fixed.replace(str(take_number) + "_", "#number#_")
         fixed = fixed.replace("_" + str(take_number), "_#number#")
         ret.append(fixed)
-    print(ret)
     return ret
 
 
@@ -160,13 +162,13 @@ class AddWidget(BaseDeviceWidget):
         self.listen_port.setToolTip("Port to listen on PC, may need to be open on the firewall")
         form_layout.addRow("Listen Port", self.listen_port)
 
+        self.format = QtWidgets.QLineEdit("Format")
+        self.format.setText(settings.value("EpicPhoneFormat", "{take}"))
+        form_layout.addRow("Format", self.format)
+
         self.mha = QtWidgets.QCheckBox("Meta Human Animator")
         self.mha.setChecked(bool(settings.value("EpicPhoneMHA")))
         form_layout.addRow("", self.mha)
-
-        self.prefix_name = QtWidgets.QCheckBox("Prefix device name")
-        self.prefix_name.setChecked(bool(settings.value("EpicPhonePrefixName")))
-        form_layout.addRow("", self.prefix_name)
 
         self.setLayout(form_layout)
 
@@ -178,7 +180,7 @@ class AddWidget(BaseDeviceWidget):
         self.listen_ip.setCurrentText(device.listen_ip)
         self.listen_port.setText(str(device.listen_port))
         self.mha.setChecked(device.mha)
-        self.prefix_name.setChecked(device.prefix_name)
+        self.format.setText(device.formatting.formatting)
 
     def update_device(self, device):
         # Update the device with the data in the text fields
@@ -189,7 +191,7 @@ class AddWidget(BaseDeviceWidget):
             device.listen_ip = self.listen_ip.ip()
             device.listen_port = int(self.listen_port.text())
             device.mha = self.mha.isChecked()
-            device.prefix_name = self.prefix_name.isChecked()
+            device.formatting.formatting = self.format.text()
         except ValueError:
             QtWidgets.QMessageBox(self, "Error", "Invalid port")
             return False
@@ -206,9 +208,12 @@ class AddWidget(BaseDeviceWidget):
         self.settings.setValue("EpicPhoneListenIp", self.listen_ip.ip())
         self.settings.setValue("EpicPhoneListenPort", self.listen_port.text())
         self.settings.setValue("EpicPhoneMHA", self.mha.isChecked())
-        self.settings.setValue("EpicPhonePrefixName", self.prefix_name.isChecked())
+        self.settings.setValue("EpicPhoneFormat", self.format.text())
 
         return True
+
+    def get_name(self) -> str:
+        return self.name.text()
 
 
 class EpicIPhone(PeelDeviceBase):
@@ -231,7 +236,6 @@ class EpicIPhone(PeelDeviceBase):
         self.ping_timer = None
         self.got_response = False
         self.mha = False
-        self.prefix_name = False
         self.takes = {}
         self.current_take = None
         self.current_name = None
@@ -244,24 +248,27 @@ class EpicIPhone(PeelDeviceBase):
 
     def as_dict(self):
 
-        return {'name': self.name,
-                'phone_ip': self.phone_ip,
-                'phone_port': self.phone_port,
-                'listen_ip': self.listen_ip,
-                'listen_port': self.listen_port,
-                'takes': self.takes,
-                'mha': self.mha,
-                'prefix_name': self.prefix_name}
+        ret = super().as_dict()
+
+        ret['phone_ip'] = self.phone_ip
+        ret['phone_port'] = self.phone_port
+        ret['listen_ip'] = self.listen_ip
+        ret['listen_port'] = self.listen_port
+        ret['takes'] = self.takes
+        ret['mha'] = self.mha
+
+        return ret
 
     def reconfigure(self, name, **kwargs):
-        self.name = name
+        if not super().reconfigure(name, **kwargs):
+            return False
+
         self.phone_ip = kwargs.get('phone_ip')
         self.phone_port = kwargs.get('phone_port')
         self.listen_ip = kwargs.get('listen_ip')
         self.listen_port = kwargs.get('listen_port')
         self.takes = kwargs.get('takes')
         self.mha = kwargs.get('mha')
-        self.prefix_name = kwargs.get('prefix_name')
 
         return True
 
@@ -330,10 +337,7 @@ class EpicIPhone(PeelDeviceBase):
 
             self.current_take = arg
             self.last_take_number = self.take_number
-            if self.prefix_name:
-                self.current_name = self.name + "_" + arg
-            else:
-                self.current_name = arg
+            self.current_name = self.format_take(arg)
             self.client.send_message('/RecordStart', (self.current_name, self.take_number))
 
             self.takes[self.current_take] = arg
@@ -448,32 +452,83 @@ class EpicIPhone(PeelDeviceBase):
         return True
 
     def harvest(self, directory):
-        thread = IPhoneDownloadThread(self, directory, self.listen_port)
+        # Create the harvest worker / thread
+        return IPhoneDownloadThread(self, directory, self.listen_port)
 
-        args_format = None
+    @staticmethod
+    def dialog_class():
+        return AddWidget
+
+    def list_takes(self):
+        return self.takes.keys()
+
+    def generic_take_name(self):
+        # get the generic/template form for the take name, in case we need to guess the filename later
+        # This allows us to use any take name to find others that we didn't get a udp response from
+        # the phone for
         for take, args in self.takes.items():
             if len(args) == 3:
+                # get the take number (int) for this take by name
                 take_number = cmd.takeNumberForTake(take)
 
-                if self.prefix_name:
-                    args_format = get_format(args, self.name + "_" + take, take_number)
-                else:
-                    args_format = get_format(args, take, take_number)
+                # Make the generic template for the take name
+                return get_format(args, self.format_take(take), take_number)
 
-                break
+        return None
 
-        for take_row in range(cmd.getTakeCount()):
 
-            take = cmd.getTakeData(take_row)["take"]
+class IPhoneDownloadThread(DownloadThread):
 
-            if self.prefix_name:
-                take_file = self.name + "_" + take
-            else:
-                take_file = take
+    def __init__(self, phone, directory, listen_port=8444):
+        super(IPhoneDownloadThread, self).__init__(directory)
+        self.phone = phone
+        self.listen_port = listen_port
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.settimeout(1)
+
+        # Allow immediate reuse of the address after close
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        except AttributeError:
+            # Not all platforms support SO_REUSEPORT
+            pass
+
+        self.socket.bind((phone.listen_ip, self.listen_port))
+
+    def __str__(self):
+        return str(self.phone) + " Downloader"
+
+    def teardown(self):
+        if self.socket:
+            self.socket.close()
+        super(IPhoneDownloadThread, self).teardown()
+
+    def process(self):
+
+        print("Iphone Process Started")
+        self.create_local_dir()
+        self.set_started()
+
+        # get the generic form for the take name, in case we need to guess the filename later
+        args_format = self.phone.generic_take_name()
+
+        if args_format:
+            cmd.writeLog("File template: {args_format}")
+
+        print("Valid Takes: " + str(self.valid_takes))
+
+        # for each take consider for downloading
+        for take in self.valid_takes:
+
+            take_file = self.phone.format_take(take)
 
             args = []
 
-            if take not in self.takes and args_format is not None:
+            if take not in self.phone.takes and args_format is not None:
+
+                # We didn't get a response from the phone, make up the file name
+                # using the parsed template
 
                 take_number = cmd.takeNumberForTake(take)
 
@@ -489,71 +544,41 @@ class EpicIPhone(PeelDeviceBase):
 
             else:
 
-                args = self.takes[take]
+                args = self.phone.takes[take]
                 cmd.writeLog("Using args: " + str(args))
 
             if len(args) != 3:
                 cmd.writeLog("Could not determine file name for : " + str(take))
                 continue
 
-            tc, mov, csv = args
-            base, mov_name = os.path.split(mov)
-            status = cmd.selectStatusForTake(take)
+            # Support (timecode, mov, csv) or (timecode, csv, mov) order
+            mov = None
+            csv = None
+            for p in args[1:]:
+                if p.lower().endswith(".mov"):
+                    mov = p
+                elif p.lower().endswith(".csv"):
+                    csv = p
 
-            if self.mha:
+            base, mov_name = os.path.split(mov)
+
+            if self.phone.mha:
 
                 for f in ["audio_metadata.json", "depth_data.bin", "depth_metadata.mhaical",
                           "frame_log.csv", "take.json", "thumbnail.jpg", "video_metadata.json"]:
-                    thread.files.append(FileItem(base + "/" + f, take_file + "/" + f, status))
-                thread.files.append(FileItem(mov, take + "/" + mov_name, status))
+                    self.add_file(base + "/" + f, take_file + "/" + f, take)
+                self.add_file(mov, take + "/" + mov_name, take)
 
             else:
-                thread.files.append(FileItem(csv, take_file + ".csv", status))
-                thread.files.append(FileItem(mov, take_file + ".mov", status))
+                self.add_file(csv, take_file + ".csv", take)
+                self.add_file(mov, take_file + ".mov", take)
 
-        return thread
+        my_address = f"{self.phone.listen_ip}:{self.listen_port}"
 
-    @staticmethod
-    def dialog_class():
-        return AddWidget
-
-    def list_takes(self):
-        return self.takes.keys()
-
-
-class IPhoneDownloadThread(DownloadThread):
-
-    def __init__(self, phone, directory, listen_port=8444):
-        super(IPhoneDownloadThread, self).__init__(directory)
-        self.phone = phone
-        self.listen_port = listen_port
-
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.settimeout(5)
-
-        self.socket.bind((phone.listen_ip, self.listen_port))
-
-    def __str__(self):
-        return str(self.phone) + " Downloader"
-
-    def teardown(self):
-        if self.socket:
-            self.socket.close()
-        super(IPhoneDownloadThread, self).teardown()
-
-    def process(self):
-
-        self.log("Downloading %d iphone files" % len(self.files))
-
-        self.create_local_dir()
-
-        self.set_started()
-
-        my_address = self.phone.listen_ip + ":" + str(self.listen_port)
-
-        self.socket.listen()
+        self.log(f"Downloading {len(self.files)} iphone files for {len(self.valid_takes)} takes")
 
         try:
+            self.socket.listen()
 
             for i, this_file in enumerate(self.files):
 
@@ -562,7 +587,7 @@ class IPhoneDownloadThread(DownloadThread):
 
                 self.set_current(i)
 
-                this_name = str(self.phone.name) + ":" + this_file.local_file
+                this_name = f"{self.phone.name}:{this_file.local_file}"
 
                 # Skip existing
                 full_path = self.local_path(this_file.local_file, this_file.status)
@@ -580,8 +605,8 @@ class IPhoneDownloadThread(DownloadThread):
                         continue
 
                 # Tell the iphone we want it to send us a file
+                print(f"Iphone getting: {this_file.remote_file}")
                 self.phone.client.send_message("/Transport", (my_address, this_file.remote_file))
-
                 self.current_size = 0
 
                 try:
@@ -592,34 +617,37 @@ class IPhoneDownloadThread(DownloadThread):
                     self.file_fail(this_name, "Timeout")
                     conn = None
 
-                if conn is not None:
+                if conn:
+                    try:
+                        conn.settimeout(1)
+                        linger = array.array("i", [1, 0])
+                        conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, linger)
 
-                    conn.settimeout(1)
-                    conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+                        # Get the file
+                        with open(full_path, "wb") as local_fp:
+                            self.read(conn, this_file, local_fp)
 
-                    # Get the file
-                    local_fp = open(full_path, "wb")
-                    self.read(conn, this_file, local_fp)
-
-                    if this_file.complete:
                         if this_file.complete == self.COPY_OK:
                             self.file_ok(this_name)
-                        if this_file.complete == self.COPY_FAIL:
+                        elif this_file.complete == self.COPY_FAIL:
                             self.file_fail(this_name, this_file.error)
-                    local_fp.close()
-                    conn.close()
 
-                    if not this_file.complete:
-                        os.unlink(full_path)
+                        if this_file.complete != self.COPY_OK:
+                            if os.path.exists(full_path):
+                                os.unlink(full_path)
+
+                    finally:
+                        conn.close()
 
             else:
                 self.set_current(len(self.files))
 
         except Exception as e:
-            self.log(str(e))
-        finally:
-            self.socket.close()
+            import traceback
+            traceback.print_exc()
+            self.log("Exception:\n" + traceback.format_exc())
 
+        print("Iphone finished")
         self.set_finished()
 
     def read(self, conn, this_file, fp):
@@ -632,8 +660,9 @@ class IPhoneDownloadThread(DownloadThread):
 
         try:
             size_header = conn.recv(4)
-            if size_header is None:
-                this_file.error = "Read Error"
+
+            if not size_header or len(size_header) < 4:
+                this_file.error = "Read Error (no header)"
                 return
 
             this_file.file_size = struct.unpack(">i", size_header)[0]
@@ -645,7 +674,12 @@ class IPhoneDownloadThread(DownloadThread):
                 return
 
             while self.is_running():
-                data = conn.recv(buffer_size)
+
+                try:
+                    data = conn.recv(buffer_size)
+                except socket.timeout:
+                    break
+
                 if not data:
                     break
 
@@ -659,9 +693,9 @@ class IPhoneDownloadThread(DownloadThread):
                 this_file.complete = self.COPY_OK
 
         except Exception as e:
-            this_file.error = f"Read Error: {str(e)}"
-        finally:
-            conn.close()  # Ensure connection is closed
+            import traceback
+            this_file.error = "Read Error:\n" + traceback.format_exc()
+
 
 
 

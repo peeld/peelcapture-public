@@ -26,7 +26,7 @@ struct PluginCallbacks
     std::function<void(void*, int, int, int, int, float, bool)> timecode;
     std::function<void(void*, const char*, const char*)> state;
     std::function<void(void*, const char**, int)> subject;
-    std::function<void(void*, const char**, int)> prop;
+    std::function<void(void*, const char**, int)> rigidbody;
     std::function<void(void*, const char*)> log;
 };
 
@@ -103,9 +103,9 @@ public:
     }
 
     // Send current subjects to the app
-    void props(const char** prop, int count) {
-        if (cb.prop) {
-            cb.prop(this, prop, count);
+    void rigidbodies(const char** prop, int count) {
+        if (cb.rigidbody) {
+            cb.rigidbody(this, prop, count);
         }
     }
 

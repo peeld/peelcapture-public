@@ -23,7 +23,7 @@
 # OR NOT THE LICENSOR WAS ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
 
 
-from peel_devices import shogun, epiciphone, DeviceCollection
+from peel_devices import epiciphone, DeviceCollection
 from peel import harvest
 from PySide6 import QtWidgets, QtCore
 
@@ -203,6 +203,12 @@ class AddDeviceDialog(QtWidgets.QDialog):
         if self.current_widget is None:
             return
 
+        name = self.current_widget.get_name()
+        for i in DEVICES:
+            if i.name == name:
+                QtWidgets.QMessageBox.warning(self, "Error", "Name already in use")
+                return
+
         # Validate the device
         if not self.current_widget.do_add():
             return
@@ -212,7 +218,6 @@ class AddDeviceDialog(QtWidgets.QDialog):
         self.current_widget.update_device(device)
 
         # Add the device to device list
-        print("Adding: " + str(device))
         DEVICES.add_device(device)
 
         # Register all devices with the application
@@ -254,6 +259,12 @@ def add_device():
     d.deleteLater()
     DIALOG_LOCK = False
 
+def find_device_by_id(device_id):
+    global DEVICES
+    for device in DEVICES:
+        if device.device_id == device_id:
+            return device
+    return None
 
 def device_info(n):
 
@@ -262,28 +273,27 @@ def device_info(n):
 
     global DEVICES
 
-    if n < 0 or n >= len(DEVICES):
+    device = find_device_by_id(n)
+    if device is None:
         return
 
     # Create a dialog
-    d = QtWidgets.QDialog(cmd.getMainWindow())
+    dlg = QtWidgets.QDialog(cmd.getMainWindow())
     layout = QtWidgets.QVBoxLayout()
-    d.setLayout(layout)
-
-    device = DEVICES[n]
+    dlg.setLayout(layout)
 
     # Get the widget class for the dialog
     klass = device.dialog_class()
     widget = klass(SETTINGS)
-    widget.populate_from_device(DEVICES[n])
+    widget.populate_from_device(device)
     layout.addWidget(widget)
 
     button = QtWidgets.QPushButton("Okay")
-    button.pressed.connect(d.accept)
+    button.pressed.connect(dlg.accept)
     layout.addWidget(button)
 
     while True:
-        if not d.exec_():
+        if not dlg.exec_():
             break
 
         if widget.do_add():
@@ -293,10 +303,10 @@ def device_info(n):
             cmd.updateDevice(device.device_ref(reason="ADD"))
             device.connect_device()
             device.device_added(widget)
-            d.deleteLater()
+            dlg.deleteLater()
             return
 
-    d.deleteLater()
+    dlg.deleteLater()
 
     DEVICES.update_all("INFO")
 
@@ -318,13 +328,6 @@ def set_device_enable(n, state):
 
     DEVICES[n].set_enabled(state)
     DEVICES.update_all("ENABLE")
-
-
-def set_subject(name, enabled):
-    global DEVICES
-    for device in DEVICES:
-        if isinstance(device, shogun.ViconShogun):
-            device.set_subject(name, enabled)
 
 
 def delete_device(device_id):

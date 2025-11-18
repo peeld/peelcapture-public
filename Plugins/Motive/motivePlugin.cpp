@@ -378,7 +378,7 @@ void MotivePlugin::getSubjectNames()
 		if (item.type == Descriptor_RigidBody)
 		{
 			auto prop = item.Data.RigidBodyDescription;
-			propDict[prop->ID] = prop->szName;
+			rigidbodyDict[prop->ID] = prop->szName;
 		}
 	}
 
@@ -434,23 +434,23 @@ void MotivePlugin::inFrame(sFrameOfMocapData* frame)
 			}
 		}
 
-		std::vector< std::string > propList;
+		std::vector< std::string > mRigidbodyList;
 		for (int p = 0; p < frame->nRigidBodies; p++)
 		{
-			auto prop = frame->RigidBodies[p];
-			int pid = prop.ID;
-			if (propDict.find(pid) == propDict.end())
+			auto rigidbody = frame->RigidBodies[p];
+			int pid = rigidbody.ID;
+			if (rigidbodyDict.find(pid) == rigidbodyDict.end())
 			{
 				getSubjectNames();
 			}
-			if (propDict.find(pid) != propDict.end())
+			if (rigidbodyDict.find(pid) != rigidbodyDict.end())
 			{
-				propList.push_back(propDict[pid]);
+				mRigidbodyList.push_back(rigidbodyDict[pid]);
 			}
 		}
 
 		std::sort(subjectList.begin(), subjectList.end());
-		std::sort(propList.begin(), propList.end());
+		std::sort(mRigidbodyList.begin(), mRigidbodyList.end());
 
 		if (this->mSubjectList != subjectList) {
 			this->mSubjectList = subjectList;
@@ -465,15 +465,15 @@ void MotivePlugin::inFrame(sFrameOfMocapData* frame)
 
 		}
 
-		if (this->mPropList != propList) {
-			this->mPropList = propList;
-			if (this->mPropList.size() == 0) {
-				this->props(nullptr, 0);
+		if (this->mRigidbodyList != mRigidbodyList) {
+			this->mRigidbodyList = mRigidbodyList;
+			if (this->mRigidbodyList.size() == 0) {
+				this->rigidbodies(nullptr, 0);
 			}
 			else {
 				std::vector<const char*> ptr;
-				for (auto& i : this->mPropList) { ptr.push_back(i.c_str()); }
-				this->props(&ptr[0], ptr.size());
+				for (auto& i : this->mRigidbodyList) { ptr.push_back(i.c_str()); }
+				this->rigidbodies(&ptr[0], ptr.size());
 			}
 
 		}
@@ -487,9 +487,9 @@ void MotivePlugin::inFrame(sFrameOfMocapData* frame)
 			this->mSubjectList.clear();
 		}
 
-		if (this->mPropList.size() > 0) {
-			this->props(NULL, 0);
-			this->mPropList.clear();
+		if (this->mRigidbodyList.size() > 0) {
+			this->rigidbodies(NULL, 0);
+			this->mRigidbodyList.clear();
 
 		}
 	}

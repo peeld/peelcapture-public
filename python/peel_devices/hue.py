@@ -151,8 +151,13 @@ class HueDeviceWidget(BaseDeviceWidget):
             except phue.PhueRegistrationException as e:
                 QtWidgets.QMessageBox.information(self, "Hue", "Could not connect to the Hue Bridge")
                 return False
+        except phue.PhueRequestTimeout as e:
+            QtWidgets.QMessageBox.information(self, "Hue", "Could not connect to device")
 
         return True
+
+    def get_name(self) -> str:
+        return self.name.text()
 
 
 class Hue(PeelDeviceBase):

@@ -46,6 +46,7 @@ from peel_devices import device_util
 
 class BaseDeviceWidget(QtWidgets.QWidget):
     """ Base class used as a widget when adding a new device """
+
     def __init__(self, settings):
         super(BaseDeviceWidget, self).__init__()
         self.settings = settings
@@ -74,7 +75,7 @@ class BaseDeviceWidget(QtWidgets.QWidget):
         being added and the dialog closing.  Default action has a double click check as this
         appears to happen often, even with a single click. """
 
-        # Prevent double clicking creating two devices
+        # Prevent double-clicking creating two devices
         if self.click_flag:
             return False
 
@@ -85,11 +86,15 @@ class BaseDeviceWidget(QtWidgets.QWidget):
     def set_info(self, msg):
         self.info_text = msg
 
+    def get_name(self) -> str :
+        raise NotImplementedError
+
 
 class SimpleDeviceWidget(BaseDeviceWidget):
     """ A basic dialog for a device that has a name and an optional IP argument """
+
     def __init__(self, settings, title, has_host, has_port, has_broadcast, has_listen_ip, has_listen_port,
-                 has_set_capture_folder=False):
+                 has_set_capture_folder=False, has_formatting=False, has_playback=False):
         super(SimpleDeviceWidget, self).__init__(settings)
         self.form_layout = QtWidgets.QFormLayout()
         self.title = title
@@ -107,6 +112,8 @@ class SimpleDeviceWidget(BaseDeviceWidget):
         self.listen_ip = None
         self.listen_port = None
         self.set_capture_folder = None
+        self.formatting = None
+        self.playback = None
 
         if has_host:
             self.host = QtWidgets.QLineEdit()
@@ -138,6 +145,16 @@ class SimpleDeviceWidget(BaseDeviceWidget):
             self.set_capture_folder.setChecked(settings.value(title + "SetCaptureFolder") == "True")
             self.form_layout.addRow("Set Capture Folder", self.set_capture_folder)
 
+        if has_formatting:
+            self.formatting = QtWidgets.QLineEdit()
+            self.formatting.setText(settings.value(title + "Formatting", "{take}"))
+            self.form_layout.addRow("Formatting", self.formatting)
+
+        if has_playback:
+            self.playback = QtWidgets.QCheckBox()
+            self.playback.setChecked(settings.value(title + "Playback") != "False")
+            self.form_layout.addRow("Playback", self.playback)
+
         self.setLayout(self.form_layout)
 
     def populate_from_device(self, device):
@@ -157,6 +174,10 @@ class SimpleDeviceWidget(BaseDeviceWidget):
             self.listen_port.setText(str(device.listen_port))
         if self.set_capture_folder is not None:
             self.set_capture_folder.setChecked(bool(device.set_capture_folder))
+        if self.formatting is not None and device.formatting:
+            self.formatting.setText(str(device.formatting.formatting))
+        if self.playback is not None:
+            self.playback.setChecked(bool(device.playback))
 
     def update_device(self, device, data=None):
 
@@ -197,6 +218,12 @@ class SimpleDeviceWidget(BaseDeviceWidget):
         if self.set_capture_folder is not None:
             data['set_capture_folder'] = self.set_capture_folder.isChecked()
 
+        if self.formatting is not None:
+            data['formatting'] = self.formatting.text()
+
+        if self.playback is not None:
+            data['playback'] = self.playback.isChecked()
+
         cmd.writeLog("UpdateDevice:")
         cmd.writeLog(str(data))
         return device.reconfigure(name, **data)
@@ -221,17 +248,48 @@ class SimpleDeviceWidget(BaseDeviceWidget):
             self.settings.setValue(self.title + "ListenPort", self.listen_port.text())
         if self.set_capture_folder is not None:
             self.settings.setValue(self.title + "SetCaptureFolder", str(self.set_capture_folder.isChecked()))
+        if self.formatting is not None:
+            self.settings.setValue(self.title + "Formatting", self.formatting.text())
+        if self.playback is not None:
+            self.settings.setValue(self.title + "Playback", self.playback.isChecked())
 
         return True
 
+    def get_name(self) -> str:
+        return self.name.text()
+
+
+class NameFormatter:
+    """ Holds a dict of parameters to use to create a file name,
+    e.g. { 'device' : 'kipro1',  'take': 'sc1_0100_t1' }
+    and formatting '{device}_{take}' would give:
+       kipro1_sc1_0100_t1 as a file name
+    This class is used by the devices and also passed to the downloader
+    """
+
+    def __init__(self, device_name):
+        self.formatting = '{take}'
+        self.values = {'device': device_name}
+
+    def set_format(self, new_format):
+        self.formatting = new_format
+
+    def format_take(self, take):
+        """ format a take file name using {key} formatting """
+
+        class SafeDict(dict):
+            def __missing__(self, key):
+                return "{" + key + "}"  # leave placeholder intact if missing
+
+        self.values['take'] = take
+        return self.formatting.format_map(SafeDict(self.values))
+
 
 class PeelDeviceBase(QtCore.QObject):
-
     """ Base class for all devices """
 
     def __init__(self, name, parent=None, *args, **kwargs):
 
-        print("PEEL DEVICE")
         """ (v1.37) Class constructors should only populate the unique name for the device and the
         default values for the variables needed by the ui.  The constructor does not take any arguments in it
         just sets the default values.  The device values are populated by "reconfigure".
@@ -280,8 +338,9 @@ class PeelDeviceBase(QtCore.QObject):
         super().__init__(parent, *args, **kwargs)
         self.name = name
         self.device_id = None  # set by DeviceCollection::add_device()
-        self.plugin_id = -1    # reference to a dll plugin created by cmd.createDevice(...)
+        self.plugin_id = -1  # reference to a dll plugin created by cmd.createDevice(...)
         self.enabled = True
+        self.formatting = NameFormatter(name)
 
     def __str__(self):
         return self.name
@@ -302,7 +361,9 @@ class PeelDeviceBase(QtCore.QObject):
     def as_dict(self):
         """ Returns the fields and values for this instance.  Used by reconfigure
             recreate the instance between application sessions """
-        raise NotImplementedError
+        return {'name': self.name,
+                'formatting': self.formatting.formatting,
+                'enabled': self.enabled}
 
     def reconfigure(self, name, **kwargs):
         """ Called to set the device settings.  Does not
@@ -311,7 +372,11 @@ class PeelDeviceBase(QtCore.QObject):
             constructor, ie if has_host is True, kwargs will have a "host" parameter.
             :return: True if values are valid, False will keep the add dialog open to fix issues
         """
-        raise NotImplementedError
+        self.name = name
+        self.formatting.set_format(kwargs.get('formatting', '{take}'))
+        self.formatting.values['name'] = name
+        self.enabled = kwargs.get('enabled', True)
+        return True
 
     def connect_device(self):
         """ Initiates the connection to the device.  Called by the application.
@@ -320,7 +385,7 @@ class PeelDeviceBase(QtCore.QObject):
             :return: None
         """
         raise NotImplementedError
-        
+
     def teardown(self):
         """ Called when the app is shutting down - tell all threads to stop and return """
         raise NotImplementedError
@@ -356,10 +421,24 @@ class PeelDeviceBase(QtCore.QObject):
         - play
 
         """
-        raise NotImplementedError
+
+        if command == "takeName":
+            self.formatting.values['take'] = argument
+
+        if command == "shotName":
+            self.formatting.values['shot'] = argument
+
+        if command == "shotTag":
+            self.formatting.values['tag'] = argument
+
+        if command == "takeNumber":
+            self.formatting.values['n'] = str(argument)
+
+        if command == "takeId":
+            self.formatting.values['id'] = str(argument)
 
     def get_state(self, reason=None):
-        """ 
+        """
         :param reason: why this is being requested.  used to determine if the request to the device should be made
         :return: one of: "OFFLINE", "ONLINE", "RECORDING", "PLAYING" or "ERROR"
         """
@@ -401,9 +480,9 @@ class PeelDeviceBase(QtCore.QObject):
 
         # Get the list of files the device says it has recorded.  This data is used in the
         # take table of the main ui to show how many files are recorded for each take.
-        #try:
+        # try:
         #    device.takes = self.list_takes()
-        #except NotImplementedError:
+        # except NotImplementedError:
         #    device.takes = []
         device.takes = []
 
@@ -430,10 +509,13 @@ class PeelDeviceBase(QtCore.QObject):
             trigger a state request and cause a loop.
 
             Valid values for reason:
-                DEVICE - the device has initiated the update
+                UPDATE (default) - the device has initiated the update
+
 
 
         """
+
+        # print(f"update state {state} {info} {reason}")
         if self.device_id is None:
             # print("No device id")
             return
@@ -468,6 +550,10 @@ class PeelDeviceBase(QtCore.QObject):
     def data_directory(self):
         """ returns the current data directory for this device """
         return cmd.getDataDirectory() + "/" + self.name
+
+    def format_take(self, name):
+        """ returns a formatted file name """
+        return self.formatting.format_take(name)
 
 
 class DeviceCollection(QtCore.QObject):
@@ -643,7 +729,7 @@ class DeviceCollection(QtCore.QObject):
                     error = True
 
         if error:
-            msg = "There was an error loading one or more devices.\n" +\
+            msg = "There was an error loading one or more devices.\n" + \
                   "Please check the error log and report any errors to support@peeldev.com"
             QtWidgets.QMessageBox.warning(cmd.getMainWindow(), "Error", msg)
 
@@ -664,6 +750,8 @@ class FileItem(object):
 
 class DownloadThread(QtCore.QObject):
 
+    """ Base class for harvest download threads.  Has functions to interface with ui """
+
     file_done = QtCore.Signal(str, int, str)  # Name, CopyState, error string
     all_done = QtCore.Signal()
     message = QtCore.Signal(str)
@@ -677,8 +765,8 @@ class DownloadThread(QtCore.QObject):
     STATUS_STOP = 2
     STATUS_FINISHED = 3
 
-    def __init__(self, directory):
-        super(DownloadThread, self).__init__()
+    def __init__(self, directory, formatting=None, parent=None):
+        super(DownloadThread, self).__init__(parent)
         self.local_directory = directory
         self.status = self.STATUS_NONE
         self.current_index = None
@@ -686,7 +774,7 @@ class DownloadThread(QtCore.QObject):
         self.last_size = None
         self.last_time = None
         self.bandwidth = None
-        self.file_size = 0     # the size of the file we are currently downloading
+        self.file_size = 0  # the size of the file we are currently downloading
         self.current_size = 0  # the size of the file we are writing to
         self.device_id = None
         self.okay_count = 0
@@ -695,8 +783,14 @@ class DownloadThread(QtCore.QObject):
         self.valid_takes = None
         self.create_selects_folders = None
         self.match_mode = None
+        self.formatting = formatting
+
+    def add_file(self, local_path, remote_path, take):
+        select = cmd.selectStatusForTake(take)
+        self.files.append(FileItem(local_path, remote_path, select))
 
     def set_file_total_size(self, value):
+        """ File size of the current file being downloaded - used for progress% """
         self.file_size = value
 
     def get_file_total_size(self):
@@ -710,6 +804,7 @@ class DownloadThread(QtCore.QObject):
         self.current_size += value
 
     def calc_bandwidth(self):
+        """ Calculate the bandwidth of data being transferred """
         if self.last_size is None or self.last_time is None:
             self.last_size = self.current_size
             self.last_time = time.time()
@@ -747,6 +842,7 @@ class DownloadThread(QtCore.QObject):
         return p + fraction * (self.current_size / self.file_size)
 
     def process(self):
+        """ Subclass thread entry point """
         return NotImplementedError
 
     def log(self, message):
@@ -802,11 +898,12 @@ class DownloadThread(QtCore.QObject):
 
     def set_match_mode(self, match_mode):
         self.match_mode = match_mode
-    
+
     def set_download_mode(self, mode, status=None):
         """
         set filter files from the device
-        mode = "All Files", "Last Take", "Selected", "Status"
+        Populates self.valid_takes with a list of take names that should be downloaded.
+        mode = "All", "Last Take", "Selected", "Status"
         status = values from cmd.selectModes() for when mode = "Status"
         """
         self.download_mode = mode
@@ -819,7 +916,7 @@ class DownloadThread(QtCore.QObject):
         if mode == "Last Take":
             takes = cmd.takes()
             if takes:
-                self.valid_takes = takes[-1]
+                self.valid_takes = [takes[-1]]
 
         if mode == "Selected":
             self.valid_takes = cmd.selectedTakes()
@@ -834,47 +931,50 @@ class DownloadThread(QtCore.QObject):
             print(f"{len(self.valid_takes)} valid takes")
             print(self.valid_takes)
 
-    def download_take_check(self, take):
+    def download_take_check(self, take_file_name):
 
-        """ Return true of the take file should be downloaded. """
+        """ Return true of the take file should be downloaded.
+            take_file_name is the file being considered for downloading, e.g.
+            for slot1/sc01_0100_tk01.mov it would be 'sc01_0100_tk01'
+            The formatting class may be used to determine the matching name
+        """
 
-        print("Checking: " + str(take))
-
-        if self.download_mode == "All Files":
-            return True
-
-        if self.valid_takes is None:
+        if self.download_mode == "All":
+            print("Adding (all files): " + str(take_file_name))
             return True
 
         if not self.valid_takes:
+            print("no takes")
             return False
 
-        fixed = file_util.fix_name(take)
+        fixed_file_name = file_util.fix_name(take_file_name)
 
-        if self.match_mode == "Exact":
-            if fixed in self.valid_takes:
-                return True
-            return False
+        # For each take name considered for downloading
+        for each_take in self.valid_takes:
 
-        if self.match_mode == "Starts With":
-            for each_take in self.valid_takes:
-                if each_take.startswith(fixed):
+            # Check if the take name has formatting applied
+            if self.formatting:
+                formatted_take = file_util.fix_name(self.formatting.format_take(each_take))
+            else:
+                formatted_take = file_util.fix_name(each_take)
+
+            if self.match_mode == "Exact":
+                # Exact name match
+                if formatted_take == fixed_file_name:
+                    print("Adding (exact): " + str(take_file_name))
                     return True
-            return False
 
-        if self.match_mode == "Contains":
-            for each_take in self.valid_takes:
-                if fixed in self.valid_takes:
+            if self.match_mode == "Starts With":
+                if fixed_file_name.startswith(formatted_take):
+                    print("Adding (starts with / formatted): " + str(take_file_name))
                     return True
-            return False
 
-        found = False
-        for i in self.valid_takes:
-            if take.startswith(i):
-                found = True
-                break
+            if self.match_mode == "Contains":
+                if fixed_file_name in formatted_take:
+                    print("Adding (contains): " + str(take_file_name))
+                    return True
 
-        return found
+        return False
 
     def set_create_selects_folders(self, value):
         """ Create folders for take status, A/B/O etc """

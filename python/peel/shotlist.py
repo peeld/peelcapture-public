@@ -25,7 +25,60 @@
 
 from openpyxl import load_workbook
 from PeelApp import cmd
-from PySide6 import QtWidgets
+from PySide6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout,
+    QCheckBox, QDialogButtonBox, QLabel, QWidget, QButtonGroup )
+
+
+class ReplaceAppendDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setWindowTitle("Import Options")
+
+        layout = QVBoxLayout(self)
+
+        # Question label
+        layout.addWidget(QLabel("Do you want to replace or append?"))
+
+        # Exclusive checkboxes
+        self.replace_cb = QCheckBox("Replace")
+        self.append_cb = QCheckBox("Append")
+
+        self.group = QButtonGroup(self)
+        self.group.setExclusive(True)
+        self.group.addButton(self.replace_cb)
+        self.group.addButton(self.append_cb)
+
+        cb_widget = QWidget()
+        cb_layout = QHBoxLayout(cb_widget)
+        cb_layout.addWidget(self.replace_cb)
+        cb_layout.addWidget(self.append_cb)
+        layout.addWidget(cb_widget)
+
+        # Import headers checkbox
+        self.import_headers_cb = QCheckBox("Import headers")
+        layout.addWidget(self.import_headers_cb)
+
+        # Ok / Cancel buttons
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        layout.addWidget(self.buttons)
+
+    def get_values(self):
+        """Return user choices as tuple (mode, import_headers)."""
+        if self.replace_cb.isChecked():
+            mode = "replace"
+        elif self.append_cb.isChecked():
+            mode = "append"
+        else:
+            mode = None
+
+        return mode, self.import_headers_cb.isChecked()
+
 
 def load(path, filter):
 
@@ -36,24 +89,22 @@ def load(path, filter):
 
     wb = load_workbook(path)
 
-    dlg = QtWidgets.QMessageBox(cmd.getMainWindow())
-    dlg.setText("Do you want to replace the current shot list or append to it?")
-    dlg.addButton("Replace", QtWidgets.QMessageBox.AcceptRole)
-    dlg.addButton("Append", QtWidgets.QMessageBox.ActionRole)
-    dlg.addButton("Cancel", QtWidgets.QMessageBox.RejectRole)
-    ret = dlg.exec()
+    dlg = ReplaceAppendDialog(cmd.getMainWindow())
+    if not dlg.exec():
+        return
+
+    mode, headers = dlg.get_values()
 
     dlg.deleteLater()
 
-    if ret == 2:
-        return
-
-    if ret == 0:
+    if mode == "replace":
         cmd.clearShotList()
 
     first = True
     for row in wb.active.values:
         if first:
+            if headers:
+                cmd.setShotListHeaders(row[2:])
             first = False
             continue
 
