@@ -247,7 +247,7 @@ class OptitrackMotive(PeelDeviceBase):
         return True
 
     def connect_device(self):
-        pass
+        self.reconfigure(**self.as_dict())
 
     def get_state(self, reason=None):
         """ Plugin will set the state """

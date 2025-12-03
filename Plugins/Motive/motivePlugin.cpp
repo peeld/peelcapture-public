@@ -414,6 +414,12 @@ void MotivePlugin::messageCallback(int verbosity, const char* message)
 
 void MotivePlugin::inFrame(sFrameOfMocapData* frame)
 {
+	std::string state(this->getState());
+	if(state == "ERROR" || state == "OFFLINE")
+	{
+		updateState("ONLINE", "");
+	}
+
 	if (captureSubjects)
 	{
 		std::vector< std::string > subjectList;
@@ -528,6 +534,7 @@ void MotivePlugin::inFrame(sFrameOfMocapData* frame)
 			std::ostringstream oss;
 			oss << "Motive timecode error: " << this->errorStr(err);
 			logMessage(oss.str().c_str());
+			updateState("ERROR", oss.str().c_str());
 		}
 	}
 }
@@ -537,6 +544,11 @@ void MotivePlugin::onMessage(Verbosity msgType, const char* msg)
 	std::ostringstream oss;
 	oss << "Motive: " << msg;
 	logMessage(oss.str().c_str());
+
+	if(msgType == Verbosity_Error)
+	{
+		updateState("ERROR", msg);
+	}
 }
 
 

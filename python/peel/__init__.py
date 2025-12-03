@@ -241,10 +241,6 @@ class AddDeviceDialog(QtWidgets.QDialog):
             return
         super().keyPressEvent(evt)
 
-
-
-
-
 def add_device():
 
     """ UI-ACTION - Called by main window to create a new device when the user clicks the "+" button """
@@ -346,6 +342,16 @@ def reconnect_device(device_id):
     global DEVICES
     DEVICES.reconnect(device_id)
 
+
+def browse_device(device_id):
+    global DEVICES
+    DEVICES.browse(device_id)
+
+
+def clear_devices():
+    global DEVICES
+    DEVICES.remove_all()
+    DEVICES.update_all("CLEAR")
 
 def command(command, argument):
     """ Main app sending a command - passed to device.command()

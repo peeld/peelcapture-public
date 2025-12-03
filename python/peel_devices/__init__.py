@@ -386,6 +386,10 @@ class PeelDeviceBase(QtCore.QObject):
         """
         raise NotImplementedError
 
+    def browse(self):
+        """ Right click "browse" open, device specific, e.g. open a browser for the device, optional """
+        pass
+
     def teardown(self):
         """ Called when the app is shutting down - tell all threads to stop and return """
         raise NotImplementedError
@@ -510,9 +514,6 @@ class PeelDeviceBase(QtCore.QObject):
 
             Valid values for reason:
                 UPDATE (default) - the device has initiated the update
-
-
-
         """
 
         # print(f"update state {state} {info} {reason}")
@@ -635,6 +636,11 @@ class DeviceCollection(QtCore.QObject):
         device = self.from_id(device_id)
         if device:
             device.connect_device()
+
+    def browse(self, device_id):
+        device = self.from_id(device_id)
+        if device:
+            device.browse()
 
     def teardown(self):
         """ We are shutting down - stop all devices """
@@ -925,11 +931,6 @@ class DownloadThread(QtCore.QObject):
             self.valid_takes = []
             for value in status:
                 self.valid_takes += cmd.takesForStatus(value)
-
-        if self.valid_takes is not None:
-            self.valid_takes = [file_util.fix_name(i) for i in self.valid_takes]
-            print(f"{len(self.valid_takes)} valid takes")
-            print(self.valid_takes)
 
     def download_take_check(self, take_file_name):
 

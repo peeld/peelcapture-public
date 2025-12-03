@@ -516,8 +516,6 @@ class IPhoneDownloadThread(DownloadThread):
         if args_format:
             cmd.writeLog("File template: {args_format}")
 
-        print("Valid Takes: " + str(self.valid_takes))
-
         # for each take consider for downloading
         for take in self.valid_takes:
 
@@ -559,6 +557,10 @@ class IPhoneDownloadThread(DownloadThread):
                     mov = p
                 elif p.lower().endswith(".csv"):
                     csv = p
+
+            if mov is None:
+                print("No mov file for " + str(take))
+                continue
 
             base, mov_name = os.path.split(mov)
 

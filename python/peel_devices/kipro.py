@@ -702,4 +702,6 @@ class KiPro(PeelDeviceBase):
         #     ret.append(take)
         # return ret
 
-
+    def browse(self):
+        import webbrowser
+        webbrowser.open(f'http://{self.host}')

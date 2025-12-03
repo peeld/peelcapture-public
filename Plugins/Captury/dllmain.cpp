@@ -244,7 +244,7 @@ public:
 
             std::vector<const char*> stringList;
             for (int i = 0; i < (int)propList.size(); i++) { stringList.push_back(propList[i].c_str()); }
-            this->props(&stringList[0], (int)stringList.size());
+            this->rigidbodies(&stringList[0], (int)stringList.size());
         } else {
             std::vector<std::string> subjectList;
             subjectList.insert(subjectList.end(), knownSubjects.begin(), knownSubjects.end());
